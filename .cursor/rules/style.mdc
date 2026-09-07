@@ -1,0 +1,727 @@
+---
+alwaysApply: true
+---
+# FinLife Assistant - Design System & Styling Guide
+
+## Overview
+This document defines the complete design system for the FinLife Assistant mobile app. All components must adhere to these rules for consistent, accessible, and performant UI.
+
+---
+
+## 1. COLOR PALETTE
+
+### Primary Colors
+```
+Primary Blue:       #2563EB (action buttons, links, highlights)
+Primary Dark:       #1E40AF (button hover/active states)
+Primary Light:      #DBEAFE (backgrounds, light fills)
+
+Secondary Purple:   #7C3AED (secondary actions, tags)
+Secondary Dark:     #5B21B6 (secondary hover/active)
+Secondary Light:    #EDE9FE (secondary backgrounds)
+```
+
+### Semantic Colors
+```
+Success Green:      #10B981 (success messages, approved)
+Success Dark:       #047857 (success hover)
+Success Light:      #D1FAE5 (success background)
+
+Warning Amber:      #F59E0B (warnings, alerts)
+Warning Dark:       #D97706 (warning hover)
+Warning Light:      #FEF3C7 (warning background)
+
+Danger Red:         #EF4444 (errors, delete actions)
+Danger Dark:        #DC2626 (danger hover)
+Danger Light:       #FEE2E2 (danger background)
+
+Info Blue:          #3B82F6 (informational messages)
+Info Dark:          #1D4ED8 (info hover)
+Info Light:         #EFF6FF (info background)
+```
+
+### Neutral Colors
+```
+Black:              #000000 (text, dark elements)
+Neutral Dark:       #1F2937 (primary text)
+Neutral Medium:     #6B7280 (secondary text, borders)
+Neutral Light:      #D1D5DB (disabled, subtle borders)
+Neutral Very Light: #F3F4F6 (dividers)
+Gray Bg:            #F9FAFB (card backgrounds, surface)
+White:              #FFFFFF (primary background)
+```
+
+### Usage Rules
+- **Backgrounds:** White (#FFFFFF) or Gray Bg (#F9FAFB)
+- **Text:** Neutral Dark (#1F2937) on white, Neutral Medium (#6B7280) for secondary
+- **Buttons:** Primary Blue (#2563EB) with white text
+- **Borders:** Neutral Light (#D1D5DB) - 1px solid
+- **Hover states:** Darken primary color by 15% or use darker semantic variant
+- **Active states:** Darken primary color by 25%
+- **Disabled:** Neutral Light (#D1D5DB) text on Neutral Very Light (#F3F4F6) background
+
+### Dark Mode (Future)
+When implemented, use inverted palette:
+- White → #1F2937
+- #F9FAFB → #111827
+- #1F2937 → #F9FAFB
+- Primary colors remain same, adjust opacity for transparency elements
+
+---
+
+## 2. TYPOGRAPHY
+
+### Font Families
+```
+Heading Font:       "Poppins" (weights: 700, 600)
+Body Font:          "Inter" (weights: 400, 500, 600)
+Monospace:          "Courier New" (data, numbers, amounts)
+```
+
+### Font Scale
+```
+H1 - Heading 1:     size: 28px, weight: 700, line-height: 36px, letter-spacing: -0.5px
+H2 - Heading 2:     size: 20px, weight: 600, line-height: 28px, letter-spacing: -0.25px
+H3 - Heading 3:     size: 18px, weight: 600, line-height: 26px, letter-spacing: 0px
+H4 - Heading 4:     size: 16px, weight: 600, line-height: 24px, letter-spacing: 0px
+
+Body - Large:       size: 16px, weight: 400, line-height: 24px, letter-spacing: 0.5px
+Body - Regular:     size: 14px, weight: 400, line-height: 21px, letter-spacing: 0.25px
+Body - Small:       size: 12px, weight: 400, line-height: 18px, letter-spacing: 0px
+
+Label - Large:      size: 16px, weight: 500, line-height: 24px, letter-spacing: 0.5px
+Label - Regular:    size: 14px, weight: 500, line-height: 21px, letter-spacing: 0.25px
+Label - Small:      size: 12px, weight: 500, line-height: 18px, letter-spacing: 0px
+
+Caption:            size: 12px, weight: 400, line-height: 16px, letter-spacing: 0px
+Overline:           size: 11px, weight: 600, line-height: 16px, letter-spacing: 1px, text-transform: uppercase
+
+Amount (Mono):      size: 18px, weight: 600, line-height: 26px, font-family: "Courier New"
+Subamount (Mono):   size: 14px, weight: 400, line-height: 21px, font-family: "Courier New"
+```
+
+### Color Rules
+```
+Heading (H1-H4):        #1F2937 (Neutral Dark)
+Body (Large, Regular):  #374151 (Neutral Dark, slightly lighter)
+Body (Small):           #6B7280 (Neutral Medium)
+Caption:                #9CA3AF (Neutral Medium, lighter)
+Overline:               #6B7280 (Neutral Medium)
+Disabled text:          #D1D5DB (Neutral Light)
+Link:                   #2563EB (Primary Blue), underline on hover
+```
+
+### Font Implementation (React Native)
+```typescript
+import { StyleSheet } from 'react-native';
+
+export const typography = {
+  h1: { fontSize: 28, fontWeight: '700', fontFamily: 'Poppins', lineHeight: 36 },
+  h2: { fontSize: 20, fontWeight: '600', fontFamily: 'Poppins', lineHeight: 28 },
+  h3: { fontSize: 18, fontWeight: '600', fontFamily: 'Poppins', lineHeight: 26 },
+  h4: { fontSize: 16, fontWeight: '600', fontFamily: 'Poppins', lineHeight: 24 },
+  
+  bodyLarge: { fontSize: 16, fontWeight: '400', fontFamily: 'Inter', lineHeight: 24 },
+  bodyRegular: { fontSize: 14, fontWeight: '400', fontFamily: 'Inter', lineHeight: 21 },
+  bodySmall: { fontSize: 12, fontWeight: '400', fontFamily: 'Inter', lineHeight: 18 },
+  
+  labelLarge: { fontSize: 16, fontWeight: '500', fontFamily: 'Inter', lineHeight: 24 },
+  labelRegular: { fontSize: 14, fontWeight: '500', fontFamily: 'Inter', lineHeight: 21 },
+  labelSmall: { fontSize: 12, fontWeight: '500', fontFamily: 'Inter', lineHeight: 18 },
+  
+  caption: { fontSize: 12, fontWeight: '400', fontFamily: 'Inter', lineHeight: 16 },
+  overline: { fontSize: 11, fontWeight: '600', fontFamily: 'Inter', lineHeight: 16 },
+  
+  amount: { fontSize: 18, fontWeight: '600', fontFamily: 'Courier New', lineHeight: 26 },
+  subamount: { fontSize: 14, fontWeight: '400', fontFamily: 'Courier New', lineHeight: 21 },
+};
+```
+
+---
+
+## 3. SPACING & LAYOUT
+
+### Spacing Scale (4px base grid)
+```
+xs:   4px     (small gaps, micro-interactions)
+sm:   8px     (between icons and text)
+md:   12px    (padding in small buttons)
+lg:   16px    (default padding, section gaps)
+xl:   20px    (larger gaps)
+2xl:  24px    (between major sections)
+3xl:  32px    (header/footer padding)
+4xl:  40px    (screen padding)
+5xl:  48px    (full-screen section gaps)
+```
+
+### Padding Rules
+```
+Card Padding:           16px (lg)
+Button Padding:         12px vertical (md), 16px horizontal (lg)
+Section Padding:        16px horizontal (lg), 24px vertical (2xl)
+Screen Padding:         16px sides (lg), 24px top/bottom (2xl)
+Icon+Text Gap:          8px (sm)
+List Item Padding:      12px vertical (md), 16px horizontal (lg)
+```
+
+### Border Radius
+```
+Small Components:   4px (very small buttons, chip elements)
+Buttons:            8px (standard buttons, input fields)
+Cards:              12px (transaction cards, event cards)
+Large Elements:     16px (full-screen modals, large cards)
+Pill Shapes:        999px (badges, rounded pills)
+```
+
+### Layout Grid
+```
+Mobile viewport: 320px - 480px
+Tablet viewport: 480px - 768px
+Desktop viewport: 768px+
+
+Safe areas:
+  - Status bar: 44px (iOS) / 24px (Android)
+  - Bottom navigation: 56px (with safe area)
+  - Notch/Dynamic island: account for system-specific safe areas
+
+Max content width: 480px (prevents awkward stretching on large devices)
+```
+
+---
+
+## 4. COMPONENT STYLING
+
+### Buttons
+
+**Primary Button**
+```
+Background:     #2563EB (Primary Blue)
+Text:           white, bold (16px, weight 600)
+Padding:        12px vertical, 24px horizontal (md + lg)
+Border Radius:  8px
+Height:         48px (touch target minimum)
+Border:         none
+Shadow:         none (flat design)
+
+Hover:          #1E40AF (darker blue)
+Active:         #1E40AF + slight scale down (0.98)
+Disabled:       #D1D5DB (neutral light) text on #F9FAFB background
+Focus:          2px outline in primary blue, offset 2px outside
+```
+
+**Secondary Button**
+```
+Background:     #F3F4F6 (neutral very light)
+Text:           #1F2937 (neutral dark), 16px, weight 500
+Padding:        12px vertical, 24px horizontal
+Border:         1px solid #D1D5DB (neutral light)
+Border Radius:  8px
+Height:         48px
+Shadow:         none
+
+Hover:          background #E5E7EB
+Active:         background #D1D5DB
+Disabled:       #D1D5DB text on #F9FAFB background
+Focus:          2px outline in primary blue
+```
+
+**Tertiary (Text) Button**
+```
+Background:     transparent
+Text:           #2563EB (primary blue), 16px, weight 500
+Padding:        8px
+Border:         none
+Border Radius:  4px
+
+Hover:          background #EFF6FF (info light)
+Active:         background #DBEAFE (primary light)
+Disabled:       #D1D5DB (neutral light)
+Focus:          2px outline in primary blue
+```
+
+### Input Fields
+
+**Text Input**
+```
+Background:     white
+Text:           #1F2937 (neutral dark), 14px, weight 400
+Padding:        12px
+Border:         1px solid #D1D5DB
+Border Radius:  8px
+Height:         48px (minimum touch target)
+Font:           Inter, 14px
+
+Focus:          border: 2px solid #2563EB, box-shadow: 0 0 0 3px #DBEAFE
+Hover:          border: 1px solid #9CA3AF (lighter)
+Filled:         background #F9FAFB
+Disabled:       background #F3F4F6, text #D1D5DB, border #E5E7EB
+Error:          border: 2px solid #EF4444, error-text below: 12px, #EF4444
+Success:        border: 2px solid #10B981
+```
+
+**Placeholder Text**
+```
+Color:          #9CA3AF (neutral medium, lighter)
+Font size:      14px (same as input)
+Opacity:        no transparency needed, use light color instead
+```
+
+### Cards
+
+**Transaction Card**
+```
+Background:     white or #F9FAFB (alternating)
+Border:         1px solid #E5E7EB
+Border Radius:  12px
+Padding:        16px (lg)
+Shadow:         0px 1px 3px rgba(0,0,0,0.1), 0px 1px 2px rgba(0,0,0,0.06)
+Margin Bottom:  12px (md)
+
+Layout:
+  - Icon (left): 32x32px, primary blue background, 8px radius
+  - Content: flex-grow
+    - Title (14px, weight 500, neutral dark)
+    - Subtitle (12px, weight 400, neutral medium)
+  - Amount (right): 16px, weight 600, neutral dark
+  - Category badge (12px, weight 500, primary light bg, primary blue text)
+
+Hover:          background: #F9FAFB, shadow: slightly increased
+Active:         background: #DBEAFE (primary light)
+Swipe actions:  edit (amber), delete (red)
+Drag handle:    ≡ icon (left side, 16px tall)
+```
+
+**Event Reminder Card**
+```
+Background:     white
+Border:         2px solid #F59E0B (amber/warning)
+Border Radius:  12px
+Padding:        16px
+Shadow:         0px 2px 4px rgba(0,0,0,0.1)
+Margin Bottom:  12px
+
+Layout:
+  - Icon (top-left): alarm clock or calendar, 28x28px
+  - Title (16px, weight 600): event name
+  - Time/Date (14px, weight 400, neutral medium): "In 3 days - 2 PM"
+  - Description (12px, weight 400): optional details
+  - Action button (right): "Snooze" or "Mark done"
+
+States:
+  - Upcoming: amber border
+  - Due soon (< 24h): red border
+  - Overdue: red background tint
+  - Completed: checkmark, gray out
+```
+
+**Category Badge**
+```
+Background:     primary light (#DBEAFE)
+Text:           primary blue (#2563EB), 12px, weight 500
+Padding:        4px horizontal (xs), 8px vertical (sm)
+Border Radius:  4px (small)
+Height:         24px (compact)
+
+Variants by category:
+  - Groceries:    teal badge
+  - Utilities:    amber badge
+  - Entertainment: purple badge
+  - Transport:    blue badge
+  - Salary:       green badge (income)
+  - Others:       gray badge
+```
+
+### Bottom Navigation
+
+**Tab Bar**
+```
+Background:     white
+Height:         56px + safe area bottom (usually 20px on mobile)
+Border:         1px solid #E5E7EB (top border)
+Shadow:         0px -2px 8px rgba(0,0,0,0.06)
+Fixed:          always stick to bottom
+
+Each Tab Item:
+  - Icon: 24x24px (filled when active, outline when inactive)
+  - Label: 12px, weight 500, uppercase, margin-top: 4px
+  - Active: #2563EB (primary), label visible
+  - Inactive: #6B7280 (neutral medium), label visible
+  - Touch target: 56px height minimum (full tab item)
+  
+Tabs: Home | Finance | Events | Subscriptions | Settings
+```
+
+### Modals & Overlays
+
+**Modal Background Overlay**
+```
+Background:     rgba(0, 0, 0, 0.5) (50% opacity black)
+Position:       fixed, covers entire screen
+Tap outside:    dismiss (if appropriate for context)
+```
+
+**Modal Content**
+```
+Background:     white
+Border Radius:  16px (top corners, bottom left/right)
+Position:       bottom sheet (slides up from bottom) or center card
+Padding:        24px (2xl)
+Shadow:         0px 20px 25px rgba(0,0,0,0.15)
+Safe Area:      account for notch/safe area
+
+Handle bar (bottom sheet only):
+  - Color: #D1D5DB
+  - Size: 4px height, 40px width
+  - Position: 12px from top, centered
+  - Border radius: 2px
+```
+
+**Processing Status Modal**
+```
+Title:          "Processing messages..." (h3, center-aligned)
+Progress:       indeterminate progress bar (2px height, primary blue)
+Message:        "Found 3 transactions, 2 exam reminders" (center, body regular)
+Action:         dismiss button or auto-close after 2-3 seconds
+```
+
+---
+
+## 5. ELEVATION & SHADOWS
+
+### Shadow Scale
+```
+Elevation 1 (subtle):
+  iOS: -ios-shadow: { shadowColor: "#000", shadowOffset: {width: 0, height: 1}, 
+                       shadowOpacity: 0.1, shadowRadius: 2 }
+  Android: elevation: 2
+  
+Elevation 2 (cards, modals):
+  iOS: shadowColor: "#000", shadowOffset: {0, 2}, shadowOpacity: 0.1, shadowRadius: 4
+  Android: elevation: 4
+
+Elevation 3 (floating actions, top nav):
+  iOS: shadowColor: "#000", shadowOffset: {0, 4}, shadowOpacity: 0.12, shadowRadius: 8
+  Android: elevation: 8
+
+Elevation 4 (menu, dropdown, overlay):
+  iOS: shadowColor: "#000", shadowOffset: {0, 8}, shadowOpacity: 0.15, shadowRadius: 12
+  Android: elevation: 12
+
+No shadows on interactive elements in disabled state.
+```
+
+### Best Practices
+- Use shadows sparingly (max 3 levels in single screen)
+- Don't use shadows on text elements
+- On dark backgrounds, reduce opacity (0.2-0.3 instead of 0.1-0.15)
+- Prefer subtle shadows for mobile (larger shadows look heavy)
+
+---
+
+## 6. ANIMATIONS & TRANSITIONS
+
+### Timing Functions
+```
+Fast:       150ms, cubic-bezier(0.4, 0, 0.2, 1)  (dismiss modals, quick feedback)
+Standard:   300ms, cubic-bezier(0.4, 0, 0.2, 1)  (default transitions)
+Slow:       500ms, cubic-bezier(0.4, 0, 0.2, 1)  (enter animations, page transitions)
+```
+
+### Common Animations
+```
+Button press:       scale: 0.98 (95ms)
+Modal open:         slideUp 300ms + fadeIn 300ms
+Modal close:        slideDown 200ms + fadeOut 200ms
+List item remove:   slideLeft 200ms + fadeOut 200ms
+List reorder:       scale 200ms + translate
+Loading spinner:    rotate 360deg infinite (2000ms)
+Pull-to-refresh:    rotate + scale down
+Notification slide: slideIn from top (300ms), slideOut (300ms delay 2s)
+```
+
+### No Animation on
+- Page navigation (use fade or slide, keep < 300ms)
+- Loading indicators (use opacity transitions, not transforms)
+- Text updates (no animation, instant update)
+- Very fast interactions (< 100ms)
+
+---
+
+## 7. ACCESSIBILITY (a11y)
+
+### Touch Targets
+```
+Minimum:        48x48px (WCAG AAA standard)
+Icons + text:   pad to at least 44px height
+Spacing:        8px between interactive elements
+```
+
+### Color Contrast
+```
+Text on background:     4.5:1 (normal text), 7:1 (AAA preferred)
+Icons on background:    3:1 minimum
+Button text:            white on #2563EB achieves 8.3:1 ✓
+Disabled text:          #D1D5DB on white = 4.2:1 (acceptable)
+```
+
+### Semantic Elements
+```
+Use <Text> with semantic roles when appropriate
+Large touch targets have accessible names
+Buttons are announced as buttons (not just text)
+Images have alt text (contentDescription on Android)
+Colors alone don't convey information (add icons, labels)
+Form fields have associated labels
+Error messages linked to input with aria-describedby equivalent
+```
+
+### Focus Management
+```
+Tab order:      logical flow (left-to-right, top-to-bottom)
+Focus visible:  2px outline, 2px offset (all interactive elements)
+Focus trap:     none (users can escape modals with back button)
+Keyboard nav:   Tab to next, Shift+Tab to previous, Enter to activate
+```
+
+---
+
+## 8. DARK MODE (Future Implementation)
+
+When implementing dark mode, swap these systematically:
+
+```
+Light Mode          →  Dark Mode
+#FFFFFF             →  #1F2937
+#F9FAFB             →  #111827
+#F3F4F6             →  #2D3748
+#E5E7EB             →  #4B5563
+#D1D5DB             →  #6B7280
+#1F2937             →  #F9FAFB
+#374151             →  #E5E7EB
+#6B7280             →  #9CA3AF
+
+Primary colors remain the same (#2563EB, etc)
+Text colors invert (dark on light → light on dark)
+Apply 0.5-0.8 opacity to overlays (instead of 0.5)
+Increase shadow opacity slightly (dark mode = more contrast needed)
+```
+
+---
+
+## 9. RESPONSIVE DESIGN
+
+### Breakpoints
+```
+Mobile:     320px - 480px (default, focus here)
+Phablet:    480px - 768px (test, auto-resize with max-width 480px)
+Tablet:     768px+ (stretch to fit, use system safe areas)
+```
+
+### Rules
+```
+Max content width:      480px (prevent awkward stretches)
+Column layout:          1 column (mobile), 2 columns (tablet+)
+Card width:             full width - 32px padding
+Font scaling:           no scaling, use fixed sizes
+Icon sizes:             24px (standard), 32px (large cards), 16px (inline)
+Touch targets:          always 48px minimum
+Screen orientation:     support both portrait and landscape
+```
+
+---
+
+## 10. IMAGE & ICON GUIDELINES
+
+### Icons
+```
+Size:               16px (inline), 24px (standard), 32px (large), 48px (hero)
+Stroke width:       2px (most icons)
+Colors:             same as text (inherit color property)
+Rounded corners:    2px on smaller icons, 4px on larger
+Consistency:        use single icon library (Material Design or similar)
+Filled vs outline:  outline for inactive, filled for active
+```
+
+### Images
+```
+Compression:        use JPEG for photos, PNG for graphics
+Max quality:        80% (JPEG) to reduce size
+Responsive:         scale images to device width
+Background:         fallback color while loading
+Aspect ratio:       16:9 or 4:3 (prefer consistent ratios)
+Loading indicator:  show shimmer or skeleton (don't leave blank)
+Accessibility:      meaningful alt text for all images
+```
+
+---
+
+## 11. STATUS INDICATORS
+
+### Payment Status
+```
+Pending:    ⏳ amber background, "Processing..."
+Confirmed:  ✓ green background, amount shown
+Failed:     ✗ red background, "Retry?" button
+```
+
+### Notification Status
+```
+Unread:     blue dot indicator
+Read:       gray dot (faded)
+Dismissed:  removed from list
+```
+
+### Sync Status
+```
+Syncing:    spinner icon, "Syncing..."
+Synced:     checkmark, "Last updated: 2 min ago"
+Offline:    ⚠ amber indicator, "Offline - changes will sync later"
+Error:      red indicator, "Sync failed - tap to retry"
+```
+
+### Processing Status
+```
+Queued:     neutral gray, "Waiting to process..."
+Processing: spinner, "Analyzing messages..."
+Complete:   green checkmark, "Found X transactions"
+Error:      red icon, "Parse error - retry?"
+```
+
+---
+
+## 12. FORM VALIDATION
+
+### Field States
+```
+Default:    border: 1px solid #D1D5DB
+Focus:      border: 2px solid #2563EB, shadow: 0 0 0 3px #DBEAFE
+Filled:     background: #F9FAFB
+Disabled:   opacity: 0.5, cursor: not-allowed
+Error:      border: 2px solid #EF4444
+Error text: 12px, color: #EF4444, margin-top: 4px
+Success:    border: 2px solid #10B981
+Warning:    border: 2px solid #F59E0B
+```
+
+### Error Messages
+```
+Format:     "This field is required" (lowercase, specific)
+Position:   below field, left-aligned, 4px gap
+Icon:       ✕ in red, next to message
+Color:      #EF4444 (danger red)
+Animation:  shake on submit if invalid (200ms)
+Clear on:   user starts typing, not before
+```
+
+---
+
+## 13. IMPLEMENTATION CHECKLIST
+
+- [ ] Define color constants in `colors.ts`
+- [ ] Define typography styles in `typography.ts`
+- [ ] Define spacing values in `spacing.ts`
+- [ ] Create reusable styled components (Button, Card, Input, etc)
+- [ ] Export all design tokens from central `styles/index.ts`
+- [ ] Implement theme provider (future dark mode support)
+- [ ] Validate all components against a11y standards
+- [ ] Test on multiple device sizes (iOS + Android)
+- [ ] Verify touch targets are 48x48px minimum
+- [ ] Test with screen reader (VoiceOver / TalkBack)
+- [ ] Check color contrast with WCAG tool
+- [ ] Profile animations for performance (60 FPS target)
+- [ ] Create component storybook (optional)
+
+---
+
+## 14. DESIGN TOKENS FILE TEMPLATE
+
+```typescript
+// styles/tokens.ts
+export const colors = {
+  primary: {
+    50: '#EFF6FF',
+    100: '#DBEAFE',
+    500: '#2563EB',
+    600: '#1E40AF',
+    700: '#1D4ED8',
+    900: '#082F49',
+  },
+  secondary: {
+    50: '#EDE9FE',
+    500: '#7C3AED',
+    600: '#5B21B6',
+  },
+  semantic: {
+    success: '#10B981',
+    warning: '#F59E0B',
+    danger: '#EF4444',
+    info: '#3B82F6',
+  },
+  neutral: {
+    0: '#FFFFFF',
+    50: '#F9FAFB',
+    100: '#F3F4F6',
+    200: '#E5E7EB',
+    400: '#D1D5DB',
+    600: '#6B7280',
+    700: '#374151',
+    900: '#1F2937',
+    1000: '#000000',
+  },
+};
+
+export const spacing = {
+  xs: 4,
+  sm: 8,
+  md: 12,
+  lg: 16,
+  xl: 20,
+  '2xl': 24,
+  '3xl': 32,
+  '4xl': 40,
+  '5xl': 48,
+};
+
+export const borderRadius = {
+  sm: 4,
+  md: 8,
+  lg: 12,
+  xl: 16,
+  full: 999,
+};
+
+export const typography = {
+  h1: { fontSize: 28, fontWeight: '700', lineHeight: 36 },
+  h2: { fontSize: 20, fontWeight: '600', lineHeight: 28 },
+  body: { fontSize: 16, fontWeight: '400', lineHeight: 24 },
+  label: { fontSize: 14, fontWeight: '500', lineHeight: 21 },
+};
+
+export const shadows = {
+  sm: '0px 1px 3px rgba(0,0,0,0.1)',
+  md: '0px 2px 4px rgba(0,0,0,0.1)',
+  lg: '0px 4px 8px rgba(0,0,0,0.12)',
+};
+```
+
+---
+
+## 15. REFERENCE SCREENSHOTS
+
+Based on the reference image provided:
+- Clean, minimal design with blue accents
+- Large, clear typography hierarchy
+- Ample whitespace and padding
+- Card-based layout for transactions/events
+- Bottom navigation for main sections
+- Drag-to-mark-done interaction (swipe capability)
+- Floating action button for quick actions
+- Consistent iconography
+
+Maintain this visual language across all screens.
+
+---
+
+## Questions?
+
+For design clarifications or component additions, refer back to this document. All new components must conform to these rules before implementation.

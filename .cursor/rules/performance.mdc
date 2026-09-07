@@ -1,0 +1,26 @@
+---
+description: FinLife performance contract — re-renders, lists, SQLite, on-device LLM
+alwaysApply: true
+---
+
+# Performance
+
+Read `performance.md` before changing lists, Zustand stores, SQLite, background tasks, or LLM code.
+
+- React Compiler is on. Do not add `useMemo` / `useCallback` / `React.memo` unless a profiled hot path needs it.
+- Zustand: selector slices only. Never `useStore()`. Do not return a new object from a selector.
+- Split `uiStore` (progress, toast, Refresh) from data stores. Do not write into list stores during inference. Throttle progress to 250ms.
+- Lists (transactions, events, subscriptions, tasks): FlashList or virtualized FlatList. Never `ScrollView` + `.map`.
+- `StyleSheet.create` at file bottom. No inline style objects on list rows.
+- LLM runs in `react-native-executorch` or `llama.rn` on a dev build — never Expo Go, never the JS thread. Regex first, batch 10–20, hash-cache, unload after the window (6–9am, 12–1pm, 8–10pm + Refresh).
+- `expo-sqlite` with indexes; batch writes; no `SELECT *` on Home. Settings via localStorage polyfill. No AsyncStorage, no Axios.
+- Background work: `expo-background-task` / `expo-task-manager` only. Never log raw SMS or amounts.
+
+```ts
+// BAD
+const all = useTransactionStore();
+useTransactionStore((s) => ({ items: s.items }));
+
+// GOOD
+const items = useTransactionStore((s) => s.items);
+```

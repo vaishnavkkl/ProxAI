@@ -1,0 +1,9 @@
+{
+  "platforms": ["apple", "android"],
+  "apple": {
+    "modules": ["FinlifeNativeModule"]
+  },
+  "android": {
+    "modules": ["expo.modules.finlifenative.FinlifeNativeModule"]
+  }
+}

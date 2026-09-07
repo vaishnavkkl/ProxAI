@@ -41,3 +41,15 @@ app-example
 # generated native folders
 /ios
 /android
+
+# Local Expo module build output (dex paths exceed Windows MAX_PATH)
+modules/**/android/build/
+modules/**/android/.cxx/
+modules/**/android/.gradle/
+modules/**/ios/build/
+**/.gradle/
+*.dex
+*.apk
+*.aar
+*.iml
+local.properties

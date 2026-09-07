@@ -6,12 +6,60 @@
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "proxai",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCalendarsUsageDescription": "ProxAI reads upcoming events from calendars on this phone, including Gmail if it is synced here. Nothing is uploaded.",
+        "NSCalendarsFullAccessUsageDescription": "ProxAI reads upcoming events from calendars on this phone, including Gmail if it is synced here. Nothing is uploaded."
+      }
     },
     "android": {
+      "permissions": [
+        "android.permission.READ_SMS",
+        "android.permission.READ_CALENDAR",
+        "android.permission.WRITE_CALENDAR"
+      ],
+      "manifestQueries": {
+        "package": [
+          "com.netflix.mediaclient",
+          "com.amazon.avod.thirdpartyclient",
+          "in.startv.hotstar",
+          "com.disney.disneyplus",
+          "com.graymatrix.did",
+          "com.sonyliv",
+          "com.jio.media.ondemand",
+          "com.jio.jioplay.tv",
+          "in.airtel.tv",
+          "com.mxtech.videoplayer.ad",
+          "com.suntv.sunnxt",
+          "ahaflix.tv",
+          "com.viewlift.hoichoi",
+          "com.lionsgateplay.videostar",
+          "com.hungama.movies.tv",
+          "com.eros.now",
+          "tv.altt",
+          "com.discoveryplus.onestream",
+          "com.apple.atve.androidtv.appletv",
+          "com.crunchyroll.crunchyroid",
+          "com.tataplay.binge",
+          "com.google.android.youtube",
+          "com.google.android.videos",
+          "com.google.android.apps.youtube.music",
+          "com.spotify.music",
+          "com.jio.media.jiobeats",
+          "com.gaana",
+          "com.bsbportal.music",
+          "com.audible.application",
+          "com.jio.myjio",
+          "com.myairtelapp",
+          "com.myvi",
+          "com.vodafone.selfcare",
+          "com.bsnl.portal",
+          "com.google.android.apps.subscriptions.red"
+        ]
+      },
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -19,7 +67,8 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.yshnav.ProxAI"
     },
     "web": {
       "output": "static",
@@ -33,10 +82,17 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#ffffff",
+          "backgroundColor": "#1E3A8A",
           "dark": {
-            "backgroundColor": "#000000"
+            "backgroundColor": "#0B1220"
           }
+        }
+      ],
+      "expo-asset",
+      [
+        "expo-calendar",
+        {
+          "calendarPermission": "ProxAI reads upcoming events from calendars on this phone, including Gmail if it is synced here. Nothing is uploaded."
         }
       ]
     ],
