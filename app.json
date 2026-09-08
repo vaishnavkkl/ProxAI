@@ -21,45 +21,6 @@
         "android.permission.READ_CALENDAR",
         "android.permission.WRITE_CALENDAR"
       ],
-      "manifestQueries": {
-        "package": [
-          "com.netflix.mediaclient",
-          "com.amazon.avod.thirdpartyclient",
-          "in.startv.hotstar",
-          "com.disney.disneyplus",
-          "com.graymatrix.did",
-          "com.sonyliv",
-          "com.jio.media.ondemand",
-          "com.jio.jioplay.tv",
-          "in.airtel.tv",
-          "com.mxtech.videoplayer.ad",
-          "com.suntv.sunnxt",
-          "ahaflix.tv",
-          "com.viewlift.hoichoi",
-          "com.lionsgateplay.videostar",
-          "com.hungama.movies.tv",
-          "com.eros.now",
-          "tv.altt",
-          "com.discoveryplus.onestream",
-          "com.apple.atve.androidtv.appletv",
-          "com.crunchyroll.crunchyroid",
-          "com.tataplay.binge",
-          "com.google.android.youtube",
-          "com.google.android.videos",
-          "com.google.android.apps.youtube.music",
-          "com.spotify.music",
-          "com.jio.media.jiobeats",
-          "com.gaana",
-          "com.bsbportal.music",
-          "com.audible.application",
-          "com.jio.myjio",
-          "com.myairtelapp",
-          "com.myvi",
-          "com.vodafone.selfcare",
-          "com.bsnl.portal",
-          "com.google.android.apps.subscriptions.red"
-        ]
-      },
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -68,7 +29,8 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.yshnav.ProxAI"
+      "package": "com.yshnav.ProxAI",
+      "softwareKeyboardLayoutMode": "resize"
     },
     "web": {
       "output": "static",

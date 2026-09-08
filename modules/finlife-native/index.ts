@@ -12,6 +12,14 @@ export type NativeInboxRow = {
   date: string;
 };
 
+export type NativeScreenshot = {
+  id: string;
+  uri: string;
+  name: string;
+  capturedAt: number;
+  revision: string;
+};
+
 export type NativeCalendarRow = {
   id: string;
   title: string;

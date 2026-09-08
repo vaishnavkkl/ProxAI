@@ -1,12 +1,14 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { type Href, useRouter } from 'expo-router';
-import { Alert, Pressable, StyleSheet, View } from 'react-native';
+import { useState } from 'react';
+import { ActivityIndicator, Alert, Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/app-text';
 import { MailAccountPicker } from '@/components/mail-account-picker';
-import { RefreshButton } from '@/components/refresh-button';
 import { ScreenScaffold } from '@/components/screen-scaffold';
 import { StatCard } from '@/components/stat-card';
+import { LifeAgenda } from '@/components/life-agenda';
+import { useLifeStore } from '@/store/life-store';
 import { useMessageRefresh } from '@/hooks/use-message-refresh';
 import { getCatalogModel } from '@/services/model-catalog';
 import { resetLedgerData } from '@/services/reset-local-data';
@@ -17,7 +19,7 @@ import { useSettingsStore } from '@/store/settings-store';
 import { useSubscriptionStore } from '@/store/subscription-store';
 import { useTransactionStore } from '@/store/transaction-store';
 import { useUiStore } from '@/store/ui-store';
-import { borderRadius, colors, gradients, layout, spacing } from '@/styles';
+import { borderRadius, colors, gradients, spacing } from '@/styles';
 import type { LedgerItem } from '@/types/ledger';
 import { formatInr } from '@/utils/format-inr';
 import { monthlyFixedTotal } from '@/utils/money-plan';
@@ -64,14 +66,56 @@ function netBalance(items: LedgerItem[]) {
 }
 
 export function Home() {
-  const router = useRouter();
+  return (
+    <ScreenScaffold scroll={false}>
+      <LifeAgenda header={<DashboardHeader />} footer={<FinanceOverview />} />
+    </ScreenScaffold>
+  );
+}
+
+function DashboardHeader() {
   const { refresh, openResources, mailChoices, pickMail, skipMail } = useMessageRefresh();
-  const isProcessing = useUiStore((s) => s.isProcessing);
-  const llmProgress = useUiStore((s) => s.llmProgress);
-  const llmLabel = useUiStore((s) => s.llmLabel);
+  const busy = useUiStore((s) => s.isProcessing);
+  const progress = useUiStore((s) => s.llmProgress);
+  const label = useUiStore((s) => s.llmLabel);
+  return (
+    <View style={styles.header}>
+      {mailChoices ? <MailAccountPicker accounts={mailChoices} onPick={pickMail} onSkip={skipMail} /> : null}
+      <View style={styles.topRow}>
+        <View style={styles.topCopy}>
+          <AppText variant="caption" style={styles.muted}>PROXAI</AppText>
+          <AppText variant="h3">{greeting()}</AppText>
+        </View>
+        <Pressable accessibilityRole="button" accessibilityLabel="Scan messages" accessibilityState={{ disabled: busy }} disabled={busy} onPress={refresh} style={styles.scanButton}>
+          {busy ? <ActivityIndicator size="small" color={colors.primary[600]} /> : <Ionicons name="refresh-outline" size={19} color={colors.primary[600]} />}
+          <AppText variant="labelSmall" style={styles.blue}>{busy ? 'Scanning' : 'Refresh'}</AppText>
+        </Pressable>
+      </View>
+      <View style={styles.topRow}>
+        <AppText variant="bodySmall" style={styles.muted}>{new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}</AppText>
+        <Pressable accessibilityRole="button" accessibilityLabel="View scan and resource details" onPress={openResources} style={styles.resourceLink}>
+          <Ionicons name="pulse-outline" size={16} color={colors.neutral[600]} />
+          <AppText variant="caption" style={styles.muted}>Activity</AppText>
+        </Pressable>
+      </View>
+      {busy ? <View style={styles.scanStatus}>
+        <AppText variant="caption" style={styles.blue}>{label || 'Reading your messages…'}</AppText>
+        <View accessibilityRole="progressbar" accessibilityValue={{ min: 0, max: 100, now: Math.round(progress * 100) }} style={styles.track}>
+          <View style={[styles.fill, { width: `${Math.max(2, Math.min(100, Math.round(progress * 100)))}%` }]} />
+        </View>
+      </View> : null}
+    </View>
+  );
+}
+
+function FinanceOverview() {
+  const [expanded, setExpanded] = useState(false);
+  const router = useRouter();
   const setToast = useUiStore((s) => s.setToast);
-  const transactions = useTransactionStore((s) => s.items);
+  const transactions = useTransactionStore((s) => s.financeItems);
   const events = useEventStore((s) => s.items);
+  const life = useLifeStore((s) => s.items);
+  const lifeStates = useLifeStore((s) => s.states);
   const subscriptions = useSubscriptionStore((s) => s.items);
   const scan = useScanSummaryStore((s) => s.summary);
   const modelId = useSettingsStore((s) => s.modelId);
@@ -86,55 +130,22 @@ export function Home() {
     consolidatedIn += account.income;
     consolidatedOut += account.spend;
   }
-  const empty = transactions.length + events.length + subscriptions.length === 0;
+  const empty = transactions.length + events.length + subscriptions.length + life.length === 0;
   const fixedTotal = monthlyFixedTotal(fixedExpenses);
   const remaining = salary - fixedTotal + netBalance(transactions);
 
   return (
-    <ScreenScaffold>
-      {mailChoices ? (
-        <MailAccountPicker accounts={mailChoices} onPick={pickMail} onSkip={skipMail} />
-      ) : null}
-      <View style={styles.topRow}>
+    <View style={styles.overview}>
+      <Pressable accessibilityRole="button" accessibilityState={{ expanded }} onPress={() => setExpanded(!expanded)} style={styles.overviewToggle}>
+        <View style={styles.overviewIcon}><Ionicons name="wallet-outline" size={21} color={colors.primary[600]} /></View>
         <View style={styles.topCopy}>
-          <AppText variant="overline">{greeting()}</AppText>
-          <AppText variant="h2">Dashboard</AppText>
+          <AppText variant="labelRegular">Finance & insights</AppText>
+          <AppText variant="caption" style={styles.muted}>Balances, accounts and your money coach</AppText>
         </View>
-      </View>
+        <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={18} color={colors.neutral[600]} />
+      </Pressable>
+      {expanded ? <View style={styles.overviewBody}>
 
-      <View accessibilityRole="summary" style={styles.heroCard}>
-        <View style={styles.heroTop}>
-          <View style={styles.heroCopy}>
-            <AppText style={styles.onHero} variant="h3">
-              Let&apos;s organize your life today
-            </AppText>
-            <AppText style={styles.onHeroMuted} variant="bodyRegular">
-              Tap Refresh to scan bank SMS, Google Calendar, and Gmail on this phone.
-            </AppText>
-          </View>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="App resource usage"
-            onPress={openResources}
-            style={styles.resourceBtn}>
-            <Ionicons color={colors.neutral[0]} name="pulse-outline" size={22} />
-          </Pressable>
-        </View>
-        <RefreshButton busy={isProcessing} onPress={refresh} />
-        {isProcessing || llmLabel ? (
-          <View style={styles.status}>
-            <View
-              accessibilityLabel={llmLabel || 'Processing'}
-              accessibilityRole="progressbar"
-              style={styles.track}>
-              <View style={[styles.fill, { width: `${Math.max(8, Math.round(llmProgress * 100))}%` }]} />
-            </View>
-            <AppText style={styles.onHeroMuted} variant="caption">
-              {llmLabel || 'Working…'}
-            </AppText>
-          </View>
-        ) : null}
-      </View>
 
       {__DEV__ ? (
         <Pressable
@@ -142,7 +153,7 @@ export function Home() {
           onPress={() => {
             Alert.alert(
               'Clear scanned data?',
-              'Removes parsed messages only. Paycheck, rent, and EMIs stay.',
+              'Removes saved messages, tasks, events, and completion history. Paycheck, rent, and EMIs stay.',
               [
                 { text: 'Cancel', style: 'cancel' },
                 {
@@ -204,7 +215,7 @@ export function Home() {
           icon="checkbox-outline"
           label="Tasks"
           tone="tasks"
-          value={String(subscriptions.length)}
+          value={String(life.filter((item) => item.type === 'action' && (!lifeStates[item.id]?.status || lifeStates[item.id]?.status === 'open')).length)}
         />
       </View>
 
@@ -260,7 +271,7 @@ export function Home() {
       ) : null}
 
       <View style={styles.section}>
-        <AppText variant="h4">Categories</AppText>
+        <AppText variant="h4">Finance categories</AppText>
         <View style={styles.categoryGrid}>
           {CATEGORIES.map((category) => {
             const total = monthCategoryTotal(transactions, category.id);
@@ -298,8 +309,8 @@ export function Home() {
           </View>
           <AppText variant="h4">Nothing to organize yet</AppText>
           <AppText style={styles.emptyCopy} variant="bodyRegular">
-            Tap Refresh above. It reads bank SMS, Google Calendar, and Gmail
-            receipts that are already on this phone. Nothing is uploaded.
+            Tap Refresh to organize messages and calendar events, or use + to add
+            a task or scan your screenshots. Nothing is uploaded.
           </AppText>
         </View>
       ) : (
@@ -312,7 +323,7 @@ export function Home() {
           </AppText>
           {scan ? (
             <AppText style={styles.emptyCopy} variant="bodySmall">
-              {scan.transactions} spends, {scan.events} reminders, {scan.subscriptions} subs.
+              {scan.life ?? 0} life items, {scan.transactions} spends, {scan.events} reminders, {scan.subscriptions} subs.
               Regex kept {scan.regex}
               {scan.usedModel ? ` · model added ${scan.model}` : ' · model not used'}
               {scan.dropped > 0 ? ` · dropped ${scan.dropped} card or bill copies` : ''}.
@@ -330,11 +341,23 @@ export function Home() {
           )}
         </View>
       )}
-    </ScreenScaffold>
+
+      </View> : null}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  header: { gap: spacing.xs },
+  muted: { color: colors.neutral[600] },
+  blue: { color: colors.primary[600] },
+  scanButton: { minHeight: 48, paddingHorizontal: spacing.md, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.primary[50], borderRadius: borderRadius.full },
+  resourceLink: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: spacing.xs, paddingLeft: spacing.md },
+  scanStatus: { padding: spacing.md, gap: spacing.sm, backgroundColor: colors.primary[50], borderRadius: borderRadius.md },
+  overview: { borderTopWidth: 1, borderColor: colors.neutral[200], marginTop: spacing.md },
+  overviewToggle: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.lg, minHeight: 72 },
+  overviewIcon: { padding: spacing.md, backgroundColor: colors.primary[50], borderRadius: borderRadius.lg },
+  overviewBody: { gap: spacing.lg, paddingBottom: spacing.lg },
   topRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -344,40 +367,16 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: spacing.xs,
   },
-  heroCard: {
-    backgroundColor: colors.primary[800],
-    experimental_backgroundImage: gradients.hero,
-    borderRadius: borderRadius.xl,
-    padding: spacing.lg,
-  },
-  heroTop: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.sm,
-    marginBottom: spacing.lg,
-  },
-  resourceBtn: {
-    width: layout.touchTarget,
-    height: layout.touchTarget,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: borderRadius.md,
-    experimental_backgroundImage: gradients.refresh,
-  },
-  status: {
-    marginTop: spacing.md,
-    gap: spacing.xs,
-  },
   track: {
     height: 4,
     borderRadius: 2,
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: colors.primary[100],
     overflow: 'hidden',
   },
   fill: {
     height: 4,
     borderRadius: 2,
-    backgroundColor: colors.neutral[0],
+    backgroundColor: colors.primary[500],
   },
   devClear: {
     minHeight: 48,
@@ -390,10 +389,6 @@ const styles = StyleSheet.create({
   },
   devClearLabel: {
     color: colors.semantic.dangerDark,
-  },
-  heroCopy: {
-    flex: 1,
-    gap: spacing.sm,
   },
   onHero: {
     color: colors.neutral[0],

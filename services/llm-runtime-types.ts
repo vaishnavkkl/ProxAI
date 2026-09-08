@@ -10,11 +10,14 @@ export type BatchResult = {
   transactions: number;
   events: number;
   subscriptions: number;
+  life?: number;
   errors: number;
   skipped: number;
   read?: number;
   calendar?: number;
   mail?: number;
+  screenshots?: number;
+  screenshotItems?: number;
   skipReason?: string;
   moreHistory?: boolean;
 };
@@ -31,6 +34,8 @@ export type LlmRamState = {
 };
 
 export type LlmRuntime = {
+  beginScan?: () => void;
+  endScan?: () => Promise<void>;
   getAvailability: () => Promise<LlmAvailability>;
   inferUnmatched: (messages: IncomingMessage[], onProgress: ProgressFn) => Promise<ParsedItem[]>;
   verifyMoneyMoves: (messages: IncomingMessage[], onProgress: ProgressFn) => Promise<boolean[]>;

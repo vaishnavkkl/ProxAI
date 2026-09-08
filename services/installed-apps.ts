@@ -2,11 +2,7 @@ import { persistParsedBatch } from '@/services/database';
 import { getFinlifeNative } from '@/services/finlife-native';
 import { useSubscriptionStore } from '@/store/subscription-store';
 import type { LedgerItem } from '@/types/ledger';
-import { isUtilitySubId, kindLabel, SUBSCRIPTION_APPS, subscriptionAppPackages } from '@/utils/subscription-apps';
-
-function todayIso() {
-  return new Date().toISOString();
-}
+import { isUtilitySubId, kindLabel, SUBSCRIPTION_APPS, SUBSCRIPTION_LINKS, subscriptionAppPackages } from '@/utils/subscription-apps';
 
 export async function importInstalledSubscriptions(): Promise<number> {
   if (process.env.EXPO_OS !== 'android') {
@@ -20,6 +16,10 @@ export async function importInstalledSubscriptions(): Promise<number> {
   let installed: string[] = [];
   try {
     installed = await native.filterInstalledPackages(subscriptionAppPackages());
+    if (native.resolveSubscriptionLinks) {
+      const linked = await native.resolveSubscriptionLinks(SUBSCRIPTION_APPS.flatMap((app) => SUBSCRIPTION_LINKS[app.id] ? [{ packageName: app.packageName, url: SUBSCRIPTION_LINKS[app.id] }] : []));
+      installed = [...new Set([...installed, ...linked])];
+    }
   } catch {
     return 0;
   }
@@ -35,29 +35,30 @@ export async function importInstalledSubscriptions(): Promise<number> {
     type: 'subscription',
     amount: null,
     merchant: app.name,
-    date: todayIso(),
+    date: null,
     category: 'other',
     note: 'app',
-    review: `${kindLabel(app.kind)} · installed on this phone`,
-    valid: true,
+    review: `${kindLabel(app.kind)} · installed app; subscription not confirmed`,
+    valid: false,
     important: 'normal',
   }));
 
-  if (items.length === 0) {
-    return 0;
-  }
-
   const known = new Set(useSubscriptionStore.getState().items.map((item) => item.id));
   const fresh = items.filter((item) => !known.has(item.id));
-  if (fresh.length === 0) {
-    return 0;
-  }
 
   try {
-    await persistParsedBatch({ items: fresh, processed: [] });
+    if (items.length) await persistParsedBatch({ items, processed: [] });
   } catch {
     // List them even if SQLite skips a row.
   }
-  useSubscriptionStore.getState().addMany(fresh);
+  const savedPlans = useSubscriptionStore.getState().items.filter((item) => !item.id.startsWith('app-') && item.note !== 'app');
+  useSubscriptionStore.getState().replaceAll([...savedPlans, ...items]);
   return fresh.length;
+}
+
+export async function openDiscoveredApp(id: string) {
+  const app = SUBSCRIPTION_APPS.find((item) => `app-${item.id}` === id);
+  const native = getFinlifeNative();
+  if (!app || !native?.openSubscriptionApp) throw new Error('Rebuild the app to open installed services.');
+  await native.openSubscriptionApp(app.packageName, SUBSCRIPTION_LINKS[app.id] ?? '');
 }

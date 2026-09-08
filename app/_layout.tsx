@@ -69,6 +69,7 @@ export default function RootLayout() {
 
   return (
     <ThemeProvider value={finLifeTheme}>
+      <StatusBar style="dark" />
       <Stack
         screenOptions={{
           headerShown: false,
@@ -95,7 +96,6 @@ export default function RootLayout() {
       </Stack>
       <LedgerDetailHost />
       <NotificationToast />
-      <StatusBar style="light" />
     </ThemeProvider>
   );
 }

@@ -41,3 +41,8 @@ android {
     abortOnError false
   }
 }
+
+dependencies {
+  // Bundled Latin OCR: works offline on the first scan, without a model download.
+  implementation 'com.google.mlkit:text-recognition:16.0.1'
+}

@@ -7,7 +7,8 @@ import { borderRadius, colors, fontFamilies, gradients, spacing } from '@/styles
 import type { LedgerItem } from '@/types/ledger';
 import { accountOf } from '@/utils/bank-account';
 import { signedInr } from '@/utils/format-inr';
-import { formatLedgerClock, formatLedgerWhen } from '@/utils/format-when';
+import { formatLedgerWhen } from '@/utils/format-when';
+import { informationTitle } from '@/utils/information';
 
 type LedgerRowProps = {
   item: LedgerItem;
@@ -19,34 +20,32 @@ function openLedger(id: string) {
 
 export function LedgerRow({ item }: LedgerRowProps) {
   const income = item.category === 'income';
-  const title = item.merchant ?? item.note ?? item.category;
+  const title = informationTitle(item);
   const amount =
     item.amount == null ? item.category : signedInr(income ? item.amount : -Math.abs(item.amount));
-  const clock = formatLedgerClock(item.date);
-  const when = clock || formatLedgerWhen(item.date);
+  const when = formatLedgerWhen(item.date);
   const bank = accountOf(item).label;
-  const detail = item.review?.trim() || item.note || item.category;
 
   return (
     <Pressable
-      accessibilityHint="Shows time and a longer description"
+      accessibilityHint="Shows transaction details"
       accessibilityRole="button"
       onPress={() => {
         openLedger(item.id);
       }}
       style={[styles.row, income ? styles.income : styles.spend]}>
       <View style={styles.iconWrap}>
-        <Ionicons color={colors.neutral[0]} name={income ? 'trending-up' : 'card-outline'} size={18} />
+        <Ionicons color={colors.neutral[0]} name={income ? 'arrow-down' : 'arrow-up'} size={18} />
       </View>
       <View style={styles.body}>
         <AppText numberOfLines={1} style={styles.title} variant="h4">
           {title}
         </AppText>
         <AppText numberOfLines={1} style={styles.meta} variant="caption">
-          {when} · {item.category} · {bank}
+          {income ? 'Credited' : 'Debited'} · {bank}
         </AppText>
         <AppText numberOfLines={2} style={styles.detail} variant="caption">
-          {detail}
+          {when}
         </AppText>
       </View>
       <AppText style={styles.amount} variant="amount">
@@ -86,6 +85,7 @@ const styles = StyleSheet.create({
   },
   body: {
     flex: 1,
+    minWidth: 0,
     gap: spacing.xs,
   },
   title: {
@@ -100,6 +100,10 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.7)',
   },
   amount: {
+    maxWidth: '40%',
+    flexShrink: 1,
+    textAlign: 'right',
+    fontSize: 18,
     color: colors.neutral[0],
     fontWeight: '700',
     fontFamily: fontFamilies.headingBold,

@@ -7,6 +7,7 @@ import type { NativeCalendarRow } from '@/modules/finlife-native';
 import type { LedgerItem } from '@/types/ledger';
 import { withAccount } from '@/utils/bank-account';
 import { parseBankMessage, type IncomingMessage } from '@/utils/bank-parsers';
+import { isRelevantEvent } from '@/utils/relevant-events';
 import { spendAmount } from '@/utils/money-amount';
 
 export type GoogleImportResult = {
@@ -37,7 +38,7 @@ function isGoogleAccount(text: string): boolean {
 
 function toEventItem(id: string, title: string, startAt: string, review: string): LedgerItem {
   return {
-    id: id.startsWith('cal-') ? id : `cal-${id}`,
+    id: `cal-${id.replace(/^cal-/, '')}-${startAt}`,
     type: 'event',
     amount: null,
     merchant: title.trim() || 'Calendar event',
@@ -179,7 +180,8 @@ async function eventsFromNative(
     if (!matchesAccount(row.account, account)) {
       continue;
     }
-    events.push(toEventItem(row.id, title, startAt, extra));
+    const eventItem = { ...toEventItem(row.id, title, startAt, extra), location: row.location, calendarName: row.calendar };
+    if (isRelevantEvent(eventItem)) events.push(eventItem);
     const item = toMailItem(row.id, title, extra, startAt);
     if (item) {
       mail.push(item);
@@ -223,10 +225,11 @@ async function eventsFromExpo(
     const events: LedgerItem[] = [];
     const mail: LedgerItem[] = [];
     for (const event of rows) {
-      const startAt = asIso(event.startDate);
+      const startAt = event.allDay ? asIso(event.startDate).slice(0, 10) : asIso(event.startDate);
       const title = event.title?.trim() || 'Calendar event';
       const notes = [event.notes, event.location].filter(Boolean).join(' ');
-      events.push(toEventItem(String(event.id), title, startAt, notes));
+      const eventItem = { ...toEventItem(String(event.id), title, startAt, notes), location: event.location, calendarName: calendars.find((calendar) => calendar.id === event.calendarId)?.title };
+      if (isRelevantEvent(eventItem)) events.push(eventItem);
       const item = toMailItem(String(event.id), title, notes, startAt);
       if (item) {
         mail.push(item);
@@ -251,12 +254,12 @@ export async function importGoogleSources(): Promise<GoogleImportResult> {
   const start = new Date();
   start.setHours(0, 0, 0, 0);
   const end = new Date(start);
-  end.setDate(end.getDate() + 90);
+  end.setFullYear(end.getFullYear() + 1);
 
   const account = useSettingsStore.getState().googleAccount;
-  let collected = await eventsFromNative(start, end, account);
+  let collected = await eventsFromExpo(start, end, account);
   if (collected.events.length === 0) {
-    collected = await eventsFromExpo(start, end, account);
+    collected = await eventsFromNative(start, end, account);
   }
 
   const knownEvents = new Set(useEventStore.getState().items.map((item) => item.id));

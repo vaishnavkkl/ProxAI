@@ -1,6 +1,7 @@
 import * as SQLite from 'expo-sqlite';
 
 import type { LedgerItem } from '@/types/ledger';
+import { isLifeItem } from '@/types/ledger';
 import { withAccount } from '@/utils/bank-account';
 
 export type LedgerRow = {
@@ -66,6 +67,19 @@ async function openDb() {
     PRAGMA journal_mode = WAL;
     PRAGMA foreign_keys = ON;
 
+    CREATE TABLE IF NOT EXISTS life_items (
+      id TEXT PRIMARY KEY NOT NULL,
+      payload TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS ledger_details (
+      id TEXT PRIMARY KEY NOT NULL,
+      payload TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS item_states (
+      id TEXT PRIMARY KEY NOT NULL,
+      payload TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS transactions (
       id TEXT PRIMARY KEY NOT NULL,
       title TEXT NOT NULL,
@@ -116,6 +130,17 @@ async function openDb() {
       key TEXT PRIMARY KEY NOT NULL,
       value TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS extraction_cache (
+      cache_key TEXT PRIMARY KEY NOT NULL,
+      payload TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS screenshot_scans (
+      asset_id TEXT PRIMARY KEY NOT NULL,
+      captured_at INTEGER NOT NULL,
+      payload TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_screenshot_date ON screenshot_scans(captured_at);
 
     CREATE TABLE IF NOT EXISTS monthly_salary (
       id TEXT PRIMARY KEY NOT NULL,
@@ -183,7 +208,7 @@ export async function loadTransactions(): Promise<LedgerItem[]> {
   const rows = await db.getAllAsync<LedgerRow>(
     'SELECT id, title, amount, category, date, note, bank_id, bank_label FROM transactions ORDER BY date DESC LIMIT 200',
   );
-  return rows.map((row) => asLedger(row, 'transaction'));
+  return restoreDetails(rows.map((row) => asLedger(row, 'transaction')));
 }
 
 export async function loadEvents(): Promise<LedgerItem[]> {
@@ -191,7 +216,7 @@ export async function loadEvents(): Promise<LedgerItem[]> {
   const rows = await db.getAllAsync<LedgerRow>(
     'SELECT id, title, amount, category, date, note FROM events ORDER BY starts_at DESC LIMIT 200',
   );
-  return rows.map((row) => asLedger(row, 'event'));
+  return restoreDetails(rows.map((row) => asLedger(row, 'event')));
 }
 
 export async function loadSubscriptions(): Promise<LedgerItem[]> {
@@ -199,7 +224,7 @@ export async function loadSubscriptions(): Promise<LedgerItem[]> {
   const rows = await db.getAllAsync<LedgerRow>(
     'SELECT id, title, amount, category, date, note FROM subscriptions ORDER BY date DESC LIMIT 200',
   );
-  return rows.map((row) => asLedger(row, 'subscription'));
+  return restoreDetails(rows.map((row) => asLedger(row, 'subscription')));
 }
 
 export async function loadProcessedHashes(): Promise<string[]> {
@@ -291,6 +316,13 @@ export async function persistParsedBatch(input: {
 
   await db.withTransactionAsync(async () => {
     for (const item of input.items) {
+      await db.runAsync('INSERT OR REPLACE INTO ledger_details (id, payload) VALUES (?, ?)', [item.id, JSON.stringify(item)]);
+      if (isLifeItem(item)) {
+        await db.runAsync(`INSERT INTO life_items (id, payload) VALUES (?, ?)
+          ON CONFLICT(id) DO UPDATE SET payload = excluded.payload
+          WHERE COALESCE(json_extract(excluded.payload, '$.receivedAt'), 0) >= COALESCE(json_extract(life_items.payload, '$.receivedAt'), 0)`, [item.id, JSON.stringify(item)]);
+        continue;
+      }
       const title = item.merchant ?? item.note ?? item.category;
       const amount = sqlValue(item.amount);
       const date = sqlValue(item.date ?? '');
@@ -434,10 +466,15 @@ export async function deleteTransactionsByIds(ids: string[]) {
 export async function clearLedgerTables() {
   const db = await getDb();
   await db.execAsync(`
+    DELETE FROM life_items;
+    DELETE FROM ledger_details;
+    DELETE FROM item_states;
     DELETE FROM transactions;
     DELETE FROM events;
     DELETE FROM subscriptions;
     DELETE FROM processed_messages;
+    DELETE FROM extraction_cache;
+    DELETE FROM screenshot_scans;
     DELETE FROM scan_meta WHERE key IN (
       'last_received_at',
       'last_scan_at',
@@ -445,6 +482,44 @@ export async function clearLedgerTables() {
       'applied_lookback_months'
     );
   `);
+}
+
+async function restoreDetails(items: LedgerItem[]): Promise<LedgerItem[]> {
+  if (items.length === 0) return [];
+  const db = await getDb();
+  const placeholders = items.map(() => '?').join(',');
+  const rows = await db.getAllAsync<{ id: string; payload: string }>(
+    `SELECT id, payload FROM ledger_details WHERE id IN (${placeholders})`, items.map((item) => item.id),
+  );
+  const details = new Map(rows.map((row) => [row.id, row.payload]));
+  return items.map((item) => {
+    try { return { ...item, ...JSON.parse(details.get(item.id) ?? '{}'), id: item.id, type: item.type }; }
+    catch { return item; }
+  });
+}
+
+export async function loadLifeItems(): Promise<LedgerItem[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<{ payload: string }>('SELECT payload FROM life_items');
+  return rows.flatMap((row) => {
+    try { const item = JSON.parse(row.payload) as LedgerItem; return isLifeItem(item) ? [item] : []; }
+    catch { return []; }
+  });
+}
+
+export type ItemState = { status?: 'open' | 'done' | 'dismissed'; date?: string | null; title?: string };
+
+export async function loadItemStates(): Promise<Record<string, ItemState>> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<{ id: string; payload: string }>('SELECT id, payload FROM item_states');
+  return Object.fromEntries(rows.flatMap((row) => {
+    try { return [[row.id, JSON.parse(row.payload) as ItemState]]; } catch { return []; }
+  }));
+}
+
+export async function saveItemState(id: string, state: ItemState) {
+  const db = await getDb();
+  await db.runAsync('INSERT OR REPLACE INTO item_states (id, payload) VALUES (?, ?)', [id, JSON.stringify(state)]);
 }
 
 export async function clearBudgetTables() {

@@ -1,4 +1,5 @@
 import { Pressable, StyleSheet, View } from 'react-native';
+import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { AppText } from '@/components/app-text';
 import type { ScanLookbackMonths } from '@/services/settings-persist';
@@ -19,10 +20,10 @@ type ScanLookbackProps = {
 export function ScanLookback({ value, onChange }: ScanLookbackProps) {
   return (
     <View style={styles.card}>
-      <AppText variant="labelRegular">Messages to scan</AppText>
+      <View style={styles.heading}><Ionicons name="time-outline" size={21} color={colors.primary[600]} /><AppText variant="labelRegular">Messages to scan</AppText></View>
       <AppText variant="bodySmall">
-        This month just started, so pick an earlier range if you want older bank SMS. Already scanned
-        messages are skipped.
+        Choose a wider range to find older renewal notices, bookings and bank messages.
+        Already scanned messages are skipped.
       </AppText>
       <View style={styles.chips}>
         {OPTIONS.map((option) => {
@@ -48,6 +49,7 @@ export function ScanLookback({ value, onChange }: ScanLookbackProps) {
 }
 
 const styles = StyleSheet.create({
+  heading: { flexDirection: 'row', gap: spacing.sm, alignItems: 'center' },
   card: {
     backgroundColor: colors.neutral[0],
     borderWidth: 1,

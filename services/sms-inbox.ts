@@ -5,6 +5,7 @@ import { lookbackLabel, startOfMonthsAgo } from '@/services/scan-window';
 import { loadAppSettings } from '@/services/settings-persist';
 import { canUseNativeLlm } from '@/utils/app-runtime';
 import type { IncomingMessage } from '@/utils/bank-parsers';
+import { localDay } from '@/utils/message-date';
 
 import { getFinlifeNative } from './finlife-native';
 
@@ -24,7 +25,7 @@ function emptyInbox(source: InboxResult['source']): InboxResult {
 }
 
 function toIsoDate(millis: number) {
-  return new Date(millis).toISOString().slice(0, 10);
+  return localDay(new Date(millis));
 }
 
 export async function requestSmsPermission(): Promise<boolean> {
@@ -42,7 +43,7 @@ export async function requestSmsPermission(): Promise<boolean> {
   return granted === PermissionsAndroid.RESULTS.GRANTED;
 }
 
-export async function collectInboxPage(afterId = 0, dateCursor = 0): Promise<InboxResult> {
+export async function collectInboxPage(afterId = 0): Promise<InboxResult> {
   if (!canUseNativeLlm() || process.env.EXPO_OS !== 'android') {
     return emptyInbox('unavailable');
   }
@@ -61,19 +62,8 @@ export async function collectInboxPage(afterId = 0, dateCursor = 0): Promise<Inb
   const windowStart = startOfMonthsAgo(settings.scanLookbackMonths);
   const limit = INBOX_PAGE_SIZE;
   let rows: { id: string; sender: string; body: string; date: string }[] = [];
-  try {
-    if (native.getInboxSince) {
-      rows = await native.getInboxSince(windowStart, limit, afterId);
-    } else if (native.getTodaysInbox) {
-      rows = await native.getTodaysInbox();
-    }
-  } catch {
-    try {
-      rows = native.getTodaysInbox ? await native.getTodaysInbox() : [];
-    } catch {
-      rows = [];
-    }
-  }
+  if (!native.getInboxSince) throw new Error('Update the Android build to scan SMS history.');
+  rows = await native.getInboxSince(windowStart, limit, afterId);
 
   const list = Array.isArray(rows) ? rows : [];
   const messages = list.map((row) => {

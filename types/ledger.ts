@@ -13,6 +13,10 @@ export function toLedgerItem(item: ParsedItem, unique = ''): LedgerItem {
   const note = item.review?.trim() || item.note;
   const day = (item.date ?? '').slice(0, 10);
   const source = unique || item.sourceId || '';
+  // A carrier update belongs to the same delivery even when its date/title changes.
+  if (item.type === 'delivery' && item.reference) {
+    return { ...item, note, id: `delivery|${idToken(item.sender ?? 'unknown')}|${idToken(item.reference)}` };
+  }
   const id = [
     item.type,
     day || 'undated',
@@ -58,5 +62,10 @@ export function countByType(items: ParsedItem[]) {
     transactions: items.filter((item) => item.type === 'transaction').length,
     events: items.filter((item) => item.type === 'event').length,
     subscriptions: items.filter((item) => item.type === 'subscription').length,
+    life: items.filter(isLifeItem).length,
   };
+}
+
+export function isLifeItem(item: ParsedItem): boolean {
+  return !['transaction', 'event', 'subscription'].includes(item.type);
 }

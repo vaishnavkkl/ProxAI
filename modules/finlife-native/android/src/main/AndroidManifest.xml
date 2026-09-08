@@ -1,4 +1,46 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
   <uses-permission android:name="android.permission.READ_SMS" />
   <uses-permission android:name="android.permission.READ_CALENDAR" />
+  <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+  <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
+  <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+  <queries>
+    <package android:name="com.netflix.mediaclient" />
+    <package android:name="com.amazon.avod.thirdpartyclient" />
+    <package android:name="in.startv.hotstar" />
+    <package android:name="com.disney.disneyplus" />
+    <package android:name="com.graymatrix.did" />
+    <package android:name="com.sonyliv" />
+    <package android:name="com.jio.media.ondemand" />
+    <package android:name="com.jio.jioplay.tv" />
+    <package android:name="in.airtel.tv" />
+    <package android:name="com.mxtech.videoplayer.ad" />
+    <package android:name="com.suntv.sunnxt" />
+    <package android:name="com.mmtv.manoramamax.android" />
+    <package android:name="com.saina" />
+    <package android:name="ahaflix.tv" />
+    <package android:name="com.viewlift.hoichoi" />
+    <package android:name="com.lionsgateplay.videostar" />
+    <package android:name="com.hungama.movies.tv" />
+    <package android:name="com.eros.now" />
+    <package android:name="tv.altt" />
+    <package android:name="com.discoveryplus.onestream" />
+    <package android:name="com.apple.atve.androidtv.appletv" />
+    <package android:name="com.crunchyroll.crunchyroid" />
+    <package android:name="com.tataplay.binge" />
+    <package android:name="com.google.android.youtube" />
+    <package android:name="com.google.android.videos" />
+    <package android:name="com.google.android.apps.youtube.music" />
+    <package android:name="com.spotify.music" />
+    <package android:name="com.jio.media.jiobeats" />
+    <package android:name="com.gaana" />
+    <package android:name="com.bsbportal.music" />
+    <package android:name="com.audible.application" />
+    <package android:name="com.jio.myjio" />
+    <package android:name="com.myairtelapp" />
+    <package android:name="com.myvi" />
+    <package android:name="com.vodafone.selfcare" />
+    <package android:name="com.bsnl.portal" />
+    <package android:name="com.google.android.apps.subscriptions.red" />
+  </queries>
 </manifest>

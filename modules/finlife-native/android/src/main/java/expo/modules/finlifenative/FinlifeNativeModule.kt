@@ -3,7 +3,12 @@ package expo.modules.finlifenative
 import android.Manifest
 import android.app.ActivityManager
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import java.io.File
 import android.os.Debug
 import android.provider.CalendarContract
 import android.provider.Telephony
@@ -39,6 +44,54 @@ class FinlifeNativeModule : Module() {
 
     AsyncFunction("filterInstalledPackages") { packages: List<String> ->
       installedPackages(packages)
+    }
+
+    AsyncFunction("getAppIcon") { packageName: String ->
+      require(packageName.matches(Regex("[A-Za-z0-9_.]+"))) { "Invalid package" }
+      val context = appContextOrThrow()
+      val manager = context.packageManager
+      val info = manager.getPackageInfo(packageName, 0)
+      val folder = File(context.cacheDir, "subscription-icons").apply { mkdirs() }
+      val file = File(folder, "$packageName.png")
+      if (!file.exists() || file.lastModified() < info.lastUpdateTime) {
+        val drawable = manager.getApplicationIcon(packageName)
+        val bitmap = Bitmap.createBitmap(128, 128, Bitmap.Config.ARGB_8888)
+        try {
+          drawable.setBounds(0, 0, 128, 128)
+          drawable.draw(Canvas(bitmap))
+          file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        } finally { bitmap.recycle() }
+      }
+      Uri.fromFile(file).toString()
+    }
+
+    AsyncFunction("resolveSubscriptionLinks") { links: List<Map<String, String>> ->
+      val manager = appContextOrThrow().packageManager
+      links.filter { link ->
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(link["url"])).setPackage(link["packageName"])
+        manager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY) != null
+      }.mapNotNull { it["packageName"] }
+    }
+
+    AsyncFunction("openSubscriptionApp") { packageName: String, url: String ->
+      val context = appContextOrThrow()
+      val deepLink = Intent(Intent.ACTION_VIEW, Uri.parse(url)).setPackage(packageName)
+      val intent = if (url.isNotEmpty() && context.packageManager.resolveActivity(deepLink, PackageManager.MATCH_DEFAULT_ONLY) != null) deepLink
+        else context.packageManager.getLaunchIntentForPackage(packageName)
+      requireNotNull(intent) { "App is no longer available" }
+      context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+
+    AsyncFunction("getScreenshotPage") { since: Double, until: Double, afterId: Double ->
+      ScreenshotReader.list(appContextOrThrow(), since.toLong(), until.toLong(), afterId.toLong())
+    }
+
+    AsyncFunction("getScreenshotHash") { uri: String ->
+      ScreenshotReader.hash(appContextOrThrow(), uri)
+    }
+
+    AsyncFunction("recognizeScreenshot") { uri: String ->
+      ScreenshotReader.recognize(appContextOrThrow(), uri)
     }
   }
 
@@ -85,7 +138,7 @@ class FinlifeNativeModule : Module() {
         arrayOf(Telephony.Sms._ID, Telephony.Sms.ADDRESS, Telephony.Sms.BODY, Telephony.Sms.DATE),
         "${Telephony.Sms.DATE} >= ? AND ${Telephony.Sms._ID} > ?",
         arrayOf(sinceMillis.toString(), afterId.toString()),
-        "${Telephony.Sms.DATE} ASC, ${Telephony.Sms._ID} ASC",
+        "${Telephony.Sms._ID} ASC",
       ) ?: return emptyList()
 
     cursor.use {

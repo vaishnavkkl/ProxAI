@@ -14,10 +14,10 @@ export function MailAccountPicker({ accounts, onPick, onSkip }: MailAccountPicke
     <Modal animationType="slide" transparent visible>
       <View style={styles.backdrop}>
         <View style={styles.sheet}>
-          <AppText variant="h3">Which Gmail account?</AppText>
+          <AppText variant="h3">Which calendar account?</AppText>
           <AppText variant="bodyRegular">
-            This phone has more than one calendar account. Pick the Gmail you want
-            Refresh to read. SMS is still scanned either way.
+            Choose the calendar to import. This does not connect your email inbox.
+            SMS is still scanned either way.
           </AppText>
           <ScrollView contentContainerStyle={styles.list} style={styles.listFill}>
             {accounts.map((account) => (
@@ -34,7 +34,7 @@ export function MailAccountPicker({ accounts, onPick, onSkip }: MailAccountPicke
           </ScrollView>
           <Pressable accessibilityRole="button" onPress={onSkip} style={styles.skip}>
             <AppText style={styles.skipLabel} variant="labelRegular">
-              Skip mail this time
+              Skip calendar this time
             </AppText>
           </Pressable>
         </View>

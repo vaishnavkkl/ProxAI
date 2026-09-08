@@ -18,6 +18,7 @@ function asSummary(value: unknown): ScanSummary | null {
     transactions: Number(row.transactions) || 0,
     events: Number(row.events) || 0,
     subscriptions: Number(row.subscriptions) || 0,
+    life: Number(row.life) || 0,
     regex: Number(row.regex) || 0,
     model: Number(row.model) || 0,
     dropped: Number(row.dropped) || 0,

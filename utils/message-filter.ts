@@ -1,5 +1,6 @@
 import type { IncomingMessage } from '@/utils/bank-parsers';
 import { isCardMirrorMessage } from '@/utils/card-sms';
+import { securityReasons } from '@/utils/life-extraction';
 
 const SPAM =
   /\b(pre[- ]?approved|instant cash|personal loan|loan offer|get a loan|apply now|limited offer|unsubscribe|otp|one[- ]time password|verification code|kyc update|recharge offer|win a|congratulations you|click here|bit\.ly|lst bid)\b/i;
@@ -48,6 +49,7 @@ export function isLikelySpam(message: IncomingMessage): boolean {
 }
 
 export function isWorthLlm(message: IncomingMessage): boolean {
+  if (securityReasons(message.body).length > 0) return true;
   if (isLikelySpam(message) || isCardMirrorMessage(message.body)) {
     return false;
   }
@@ -56,6 +58,7 @@ export function isWorthLlm(message: IncomingMessage): boolean {
     DATE_OR_DUE.test(message.body) ||
     TICKET_OR_EVENT.test(message.body) ||
     SUBSCRIPTION.test(message.body)
+    || /\b(task|promise|submit|deadline|delivery|parcel|shipment|warranty|return window|insurance|passport)\b/i.test(message.body)
   );
 }
 

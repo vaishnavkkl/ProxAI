@@ -6,11 +6,14 @@ import {
   loadSalary,
   loadSubscriptions,
   loadTransactions,
+  loadLifeItems,
+  loadItemStates,
 } from '@/services/database';
 import { loadScanSummary } from '@/services/scan-summary';
 import { loadAppSettings } from '@/services/settings-persist';
 import { useBudgetStore } from '@/store/budget-store';
 import { useEventStore } from '@/store/event-store';
+import { useLifeStore } from '@/store/life-store';
 import { useProcessedStore } from '@/store/processed-store';
 import { useScanSummaryStore } from '@/store/scan-summary-store';
 import { useSettingsStore } from '@/store/settings-store';
@@ -19,7 +22,7 @@ import { useTransactionStore } from '@/store/transaction-store';
 import { isUsageNoiseText } from '@/utils/message-filter';
 
 export async function hydrateApp() {
-  const [transactions, events, subscriptions, hashes, salary, expenses, settings, scanSummary] =
+  const [transactions, events, subscriptions, hashes, salary, expenses, settings, scanSummary, life, states] =
     await Promise.all([
       loadTransactions(),
       loadEvents(),
@@ -29,6 +32,8 @@ export async function hydrateApp() {
       loadFixedExpenses(),
       loadAppSettings(),
       loadScanSummary(),
+      loadLifeItems(),
+      loadItemStates(),
     ]);
 
   const noiseIds = new Set(
@@ -41,6 +46,7 @@ export async function hydrateApp() {
   }
   useTransactionStore.getState().replaceAll(transactions.filter((item) => !noiseIds.has(item.id)));
   useEventStore.getState().replaceAll(events);
+  useLifeStore.getState().replaceAll(life, states);
   useSubscriptionStore.getState().replaceAll(subscriptions.filter((item) => item.id !== 'app-drive'));
   useProcessedStore.getState().replaceAll(hashes);
   useBudgetStore.getState().replaceAll(salary, expenses);

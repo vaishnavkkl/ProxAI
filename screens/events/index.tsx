@@ -1,152 +1,53 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useState } from 'react';
-import { FlatList, Pressable, StyleSheet, View } from 'react-native';
-
+import { Pressable, SectionList, StyleSheet, View } from 'react-native';
 import { AppText } from '@/components/app-text';
 import { EventRow } from '@/components/event-row';
 import { ScreenScaffold } from '@/components/screen-scaffold';
+import { SectionHero } from '@/components/section-hero';
 import { importDeviceCalendar } from '@/services/device-calendar';
 import { useEventStore } from '@/store/event-store';
+import { useLifeStore } from '@/store/life-store';
 import { useUiStore } from '@/store/ui-store';
+import { relevantEvents, isHolidayEvent } from '@/utils/relevant-events';
+import { regionalHolidays } from '@/utils/regional-holidays';
+import { parseLocalDate } from '@/utils/message-date';
 import { borderRadius, colors, spacing } from '@/styles';
 import type { LedgerItem } from '@/types/ledger';
 
-function keyExtractor(item: LedgerItem) {
-  return item.id;
-}
-
-function renderEvent({ item }: { item: LedgerItem }) {
-  return <EventRow item={item} />;
-}
-
-function EmptyEvents() {
-  return (
-    <View style={styles.empty}>
-      <View style={styles.iconWrap}>
-        <Ionicons color={colors.semantic.warning} name="calendar-outline" size={28} />
-      </View>
-      <AppText variant="h4">No upcoming events</AppText>
-      <AppText style={styles.copy} variant="bodyRegular">
-        Refresh reads SMS plus the next 90 days from Google Calendar on this
-        phone. Import here does the same calendar pass again.
-      </AppText>
-    </View>
-  );
-}
+function keyExtractor(item: LedgerItem) { return item.id; }
+function renderEvent({ item }: { item: LedgerItem }) { return <EventRow item={item} />; }
 
 export function Events() {
-  const items = useEventStore((s) => s.items);
-  const setToast = useUiStore((s) => s.setToast);
+  const storedItems = useEventStore((s) => s.items);
+  const states = useLifeStore((s) => s.states);
+  const [filter, setFilter] = useState<'all' | 'personal' | 'holidays'>('all');
   const [importing, setImporting] = useState(false);
-
-  return (
-    <ScreenScaffold scroll={false}>
-      <AppText variant="overline">Events</AppText>
-      <AppText variant="h2">Reminders</AppText>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Import device calendar"
-        disabled={importing}
-        onPress={() => {
-          if (importing) {
-            return;
-          }
-          setImporting(true);
-          void importDeviceCalendar()
-            .then((count) => {
-              setToast({
-                kind: 'success',
-                message:
-                  count > 0
-                    ? `Imported ${count} calendar event${count === 1 ? '' : 's'}.`
-                    : 'No new events in the next 90 days.',
-              });
-            })
-            .catch((error: unknown) => {
-              setToast({
-                kind: 'error',
-                message: error instanceof Error ? error.message : 'Calendar import failed',
-              });
-            })
-            .finally(() => {
-              setImporting(false);
-            });
-        }}
-        style={[styles.importBtn, importing ? styles.importBtnDisabled : null]}>
-        <Ionicons
-          color={importing ? colors.neutral[400] : colors.primary[500]}
-          name="download-outline"
-          size={18}
-        />
-        <AppText style={importing ? styles.importLabelDisabled : styles.importLabel} variant="labelRegular">
-          {importing ? 'Importing…' : 'Import calendar'}
-        </AppText>
-      </Pressable>
-      <FlatList
-        contentContainerStyle={styles.list}
-        style={styles.listFill}
-        data={items}
-        keyExtractor={keyExtractor}
-        ListEmptyComponent={EmptyEvents}
-        renderItem={renderEvent}
-        showsVerticalScrollIndicator={false}
-      />
-    </ScreenScaffold>
-  );
+  const items = relevantEvents([...storedItems, ...regionalHolidays()], states).filter((item) => filter === 'all' || (filter === 'holidays' ? isHolidayEvent(item) : !isHolidayEvent(item)));
+  const grouped = new Map<string, LedgerItem[]>();
+  for (const item of items) { const key = item.date!.slice(0, 7); const group = grouped.get(key) ?? []; group.push(item); grouped.set(key, group); }
+  const sections = [...grouped].map(([key, data]) => ({ key, title: parseLocalDate(`${key}-01`).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' }), data }));
+  async function refreshCalendar() {
+    if (importing) return;
+    setImporting(true);
+    try { const count = await importDeviceCalendar(); useUiStore.getState().setToast({ kind: 'success', message: count ? `${count} new calendar events added.` : 'Calendar checked for the next 12 months.' }); }
+    catch (error) { useUiStore.getState().setToast({ kind: 'error', message: error instanceof Error ? error.message : 'Calendar import failed.' }); }
+    finally { setImporting(false); }
+  }
+  return <ScreenScaffold scroll={false}>
+    <SectionList style={styles.fill} sections={sections} keyExtractor={keyExtractor} renderItem={renderEvent} stickySectionHeadersEnabled={false} showsVerticalScrollIndicator={false} contentContainerStyle={styles.list}
+      ListHeaderComponent={<View style={styles.header}>
+        <SectionHero title="Good days ahead" subtitle="Your plans, Kerala & India holidays" icon="calendar-outline" />
+        <View style={styles.tools}><View style={styles.copy}><AppText variant="h4">Your calendar</AppText><AppText variant="caption" style={styles.muted}>Looking ahead 12 months</AppText></View><Pressable accessibilityRole="button" disabled={importing} onPress={() => void refreshCalendar()} style={styles.importButton}><Ionicons name="sync-outline" size={18} color={colors.primary[600]} /><AppText variant="labelSmall" style={styles.blue}>{importing ? 'Syncing…' : 'Sync calendar'}</AppText></Pressable></View>
+        <View style={styles.filters}>{(['all', 'personal', 'holidays'] as const).map((value) => <Pressable key={value} accessibilityRole="button" accessibilityState={{ selected: filter === value }} onPress={() => setFilter(value)} style={[styles.filter, filter === value && styles.selected]}><AppText variant="labelSmall" style={filter === value ? styles.blue : styles.muted}>{value === 'all' ? 'All events' : value === 'personal' ? 'My plans' : 'Holidays'}</AppText></Pressable>)}</View>
+      </View>}
+      renderSectionHeader={({ section }) => <AppText variant="labelRegular" style={styles.month}>{section.title}</AppText>}
+      ListEmptyComponent={<View style={styles.empty}><Ionicons name="calendar-clear-outline" size={32} color={colors.primary[500]} /><AppText variant="h4">Room for your next plan</AppText><AppText variant="bodySmall" style={styles.muted}>Confirmed appointments and bookings appear here after Refresh. Sync your calendar for personal events.</AppText></View>}
+    />
+  </ScreenScaffold>;
 }
-
 const styles = StyleSheet.create({
-  importBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 48,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.md,
-    borderWidth: 1,
-    borderColor: colors.neutral[400],
-    backgroundColor: colors.neutral[100],
-    gap: spacing.sm,
-  },
-  importBtnDisabled: {
-    backgroundColor: colors.neutral[50],
-    borderColor: colors.neutral[200],
-  },
-  importLabel: {
-    color: colors.neutral[900],
-  },
-  importLabelDisabled: {
-    color: colors.neutral[400],
-  },
-  listFill: {
-    flex: 1,
-  },
-  list: {
-    gap: spacing.md,
-    flexGrow: 1,
-    paddingBottom: 0,
-  },
-  empty: {
-    alignItems: 'center',
-    backgroundColor: colors.neutral[0],
-    boxShadow: '0px 1px 3px rgba(0,0,0,0.06)',
-    borderWidth: 1,
-    borderColor: colors.neutral[200],
-    borderRadius: borderRadius.lg,
-    padding: spacing['2xl'],
-    gap: spacing.sm,
-  },
-  iconWrap: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: 48,
-    height: 48,
-    borderRadius: borderRadius.md,
-    backgroundColor: colors.semantic.warningLight,
-    marginBottom: spacing.xs,
-  },
-  copy: {
-    textAlign: 'center',
-  },
+  fill: { flex: 1 }, list: { paddingBottom: spacing['2xl'] }, header: { gap: spacing.lg }, tools: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm }, copy: { flex: 1, minWidth: 0, gap: spacing.xs }, muted: { color: colors.neutral[600] }, blue: { color: colors.primary[600] },
+  importButton: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: spacing.xs, paddingHorizontal: spacing.md, borderRadius: borderRadius.full, backgroundColor: colors.primary[50] },
+  filters: { flexDirection: 'row', padding: spacing.xs, borderRadius: borderRadius.lg, backgroundColor: colors.neutral[200] }, filter: { minHeight: 48, flex: 1, alignItems: 'center', justifyContent: 'center', borderRadius: borderRadius.md }, selected: { backgroundColor: colors.neutral[0] }, month: { marginTop: spacing.xl, marginBottom: spacing.md, color: colors.neutral[700] }, empty: { padding: spacing.xl, gap: spacing.md, marginTop: spacing.lg, borderRadius: borderRadius.xl, backgroundColor: colors.neutral[0] },
 });

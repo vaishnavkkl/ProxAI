@@ -7,6 +7,7 @@ export type ScanSummary = {
   transactions: number;
   events: number;
   subscriptions: number;
+  life?: number;
   regex: number;
   model: number;
   dropped: number;

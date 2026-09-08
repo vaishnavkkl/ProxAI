@@ -1,9 +1,11 @@
+import { parseLocalDate } from '@/utils/message-date';
+
 export function formatLedgerWhen(value: string | null | undefined): string {
   if (!value) {
     return 'Time not set';
   }
 
-  const parsed = new Date(value);
+  const parsed = parseLocalDate(value);
   if (Number.isNaN(parsed.getTime())) {
     return value;
   }

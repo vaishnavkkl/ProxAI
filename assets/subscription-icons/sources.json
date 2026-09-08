@@ -1,0 +1,191 @@
+[
+  {
+    "id": "netflix",
+    "name": "Netflix",
+    "page": "https://play.google.com/store/apps/details?id=com.netflix.mediaclient&hl=en&gl=IN",
+    "icon": "https://play-lh.googleusercontent.com/fXVS45nukV1x9PYVSKHkCQK0QGCOishIvAOxIZS3sgRem8HS7l9l94_Ggj-WZPrTLePRdNYN4pp4SPAQL7oS0PU=w128-h128-rw",
+    "file": "netflix.webp"
+  },
+  {
+    "id": "prime",
+    "name": "Amazon Prime Video",
+    "page": "https://play.google.com/store/apps/details?id=com.amazon.avod.thirdpartyclient&hl=en&gl=IN",
+    "icon": "https://play-lh.googleusercontent.com/NnoDzfxkvlsAvU8jzoPeK8aaxbcU2sEH_btwgMQ2xI88_qtrNGQuf1vlFkxSiQODyKVFZ3-s71sU1MHyV-vc9Q=w128-h128-rw",
+    "file": "prime.webp"
+  },
+  {
+    "id": "hotstar",
+    "name": "JioHotstar",
+    "page": "https://play.google.com/store/apps/details?id=in.startv.hotstar&hl=en&gl=IN",
+    "icon": "https://play-lh.googleusercontent.com/02xiO0ptbXjD8NR3sbS2StP1P9aytDN56dDR15zqM_i66Vwq5W_hD-98CoFxvRVoUS4uV_xMSv-iQh3nQFeDeQ=w128-h128-rw",
+    "file": "hotstar.webp"
+  },
+  {
+    "id": "disney",
+    "name": "Disney+",
+    "page": "https://play.google.com/store/apps/details?id=com.disney.disneyplus&hl=en&gl=IN",
+    "icon": "https://play-lh.googleusercontent.com/AEX_3Bk5_SEZfR4fUcJsWiyqW_RRVcLED9AM2HMUVHAPVTZhZHfP2q3M35mRe4LtCXlb712DtkKwkZa_nJ-0=w128-h128-rw",
+    "file": "disney.webp"
+  },
+  {
+    "id": "zee5",
+    "name": "ZEE5",
+    "page": "https://play.google.com/store/apps/details?id=com.graymatrix.did&hl=en&gl=IN",
+    "icon": "https://play-lh.googleusercontent.com/NyMT3ByjkBG1FhdFX9GSj_0mXLNIAuz_IZO8Xr9Noow6D4IQs-Srai9Hklad5gDasSv6F5tHYwsquk1mXErQ5A=w128-h128-rw",
+    "file": "zee5.webp"
+  },
+  {
+    "id": "sonyliv",
+    "name": "SonyLIV",
+    "page": "https://play.google.com/store/apps/details?id=com.sonyliv&hl=en&gl=IN",
+    "icon": "https://play-lh.googleusercontent.com/OSPwLdQHHx16DNvMT8GxkBvpzj5x9WG9_DmJoTMS1YKKbg1YsQlfzTLzc-XTkCLaF9FT7-I-kX9RvSUxSAwYRA=w128-h128-rw",
+    "file": "sonyliv.webp"
+  },
+  {
+    "id": "jiotv",
+    "name": "JioTV",
+    "page": "https://play.google.com/store/apps/details?id=com.jio.jioplay.tv&hl=en&gl=IN",
+    "icon": "https://play-lh.googleusercontent.com/RGAfYA3KWBShF44we_4wUAkHNiYpQUGg9oWxJuXPIwOqWysztLKLXbJtLWg-v_gs9VKhGeopYeKfJcs-Gb7xYA=w128-h128-rw",
+    "file": "jiotv.webp"
+  },
+  {
+    "id": "mxplayer",
+    "name": "MX Player",
+    "page": "https://play.google.com/store/apps/details?id=com.mxtech.videoplayer.ad&hl=en&gl=IN",
+    "icon": "https://play-lh.googleusercontent.com/pL-FlnQwdyKetEhT_Uzre61MnGKhMgLC7wnV12KgC_wrQbU0UbSkYs4T5fQQWL_QLZZ48fl1mBmN-cNbc1wSZA=w128-h128-rw",
+    "file": "mxplayer.webp"
+  },
+  {
+    "id": "sunnxt",
+    "name": "Sun NXT",
+    "page": "https://play.google.com/store/apps/details?id=com.suntv.sunnxt&hl=en&gl=IN",
+    "icon": "https://play-lh.googleusercontent.com/x4kBOcfV6zyByJJdlDQENUO8iIre45oCpA0vPr4t5t3cohnXDHnIf1qGZYwEvFYWxlGJ2YiDXmrLLOu8nN2YHQ=w128-h128-rw",
+    "file": "sunnxt.webp"
+  },
+  {
+    "id": "manoramamax",
+    "name": "ManoramaMAX",
+    "page": "https://play.google.com/store/apps/details?id=com.mmtv.manoramamax.android&hl=en&gl=IN",
+    "icon": "https://play-lh.googleusercontent.com/TqWOfDjT-LwEskdVhs2IicWjTd6y0uXBSfljsexA79T14M_YlOU_E3-550lHfCqmxa9tmSS6nyCIG0l21Kfu=w128-h128-rw",
+    "file": "manoramamax.webp"
+  },
+  {
+    "id": "sainaplay",
+    "name": "Saina Play",
+    "page": "https://play.google.com/store/apps/details?id=com.saina&hl=en&gl=IN",
+    "icon": "https://play-lh.googleusercontent.com/iaKYoy5zeSDo4YYJ9aAC5nYaLpeMUWlrmta8amMU0Llu0DUFGDfYSLqcHg17wuom_VDYeIbrUQVVqZ1syzqY=w128-h128-rw",
+    "file": "sainaplay.webp"
+  },
+  {
+    "id": "aha",
+    "name": "aha",
+    "page": "https://play.google.com/store/apps/details?id=ahaflix.tv&hl=en&gl=IN",
+    "icon": "https://play-lh.googleusercontent.com/IkWgTZbx1Bmj1DN8YyWeF5GMMh7Uvx3YGf4I_7XCJBG5qgu1wcEGWSIhwp8JJ_qW5qOlURtzcy0KsVM5DklKtg=w128-h128-rw",
+    "file": "aha.webp"
+  },
+  {
+    "id": "hoichoi",
+    "name": "Hoichoi",
+    "page": "https://play.google.com/store/apps/details?id=com.viewlift.hoichoi&hl=en&gl=IN",
+    "icon": "https://play-lh.googleusercontent.com/OPVp6CeTbocyOCXcDbNK0Tvyxdd0xBvqQgLE4S4QuTbFKLxyu08_IR3wU4_VYIL31RQ51HZL6K2L3bgSA62iXg=w128-h128-rw",
+    "file": "hoichoi.webp"
+  },
+  {
+    "id": "eros",
+    "name": "Eros Now",
+    "page": "https://play.google.com/store/apps/details?id=com.eros.now&hl=en&gl=IN",
+    "icon": "https://play-lh.googleusercontent.com/pkQlSQEcflup9almr7gXdn67ZOZi7aQYzS4WDZoyDcOSurfXaXL7Ut_mXTBd93QirhS3eEPWBBlTEYjF6Z1a=w128-h128-rw",
+    "file": "eros.webp"
+  },
+  {
+    "id": "appletv",
+    "name": "Apple TV",
+    "page": "https://play.google.com/store/apps/details?id=com.apple.atve.androidtv.appletv&hl=en&gl=IN",
+    "icon": "https://play-lh.googleusercontent.com/OClJIvZt6akgvt1v9AZf5C0RHtanBLtxtEKPMO-iU0UQgOIaKqSf_efqSi06H8dRNVVAz1y9rMX8TUugdpSI9A=w128-h128-rw",
+    "file": "appletv.webp"
+  },
+  {
+    "id": "crunchyroll",
+    "name": "Crunchyroll",
+    "page": "https://play.google.com/store/apps/details?id=com.crunchyroll.crunchyroid&hl=en&gl=IN",
+    "icon": "https://play-lh.googleusercontent.com/FUEOotGzxEZqItvGGov0YBiOhZBCACxCM6kF37OtpWrCG9H6EyxSeY2G8PDXQGueLxlxtL3Xr0fbkvXaQ67NLg=w128-h128-rw",
+    "file": "crunchyroll.webp"
+  },
+  {
+    "id": "youtube",
+    "name": "YouTube",
+    "page": "https://play.google.com/store/apps/details?id=com.google.android.youtube&hl=en&gl=IN",
+    "icon": "https://play-lh.googleusercontent.com/QNmuZQc9I6Zbe3mWnSr0hycnENqGFCI5p3yE29Hkxtf22T0IWS6zTrpxULLyyjWpB7ONAXDsDQXnXcVWokl3eg=w128-h128-rw",
+    "file": "youtube.webp"
+  },
+  {
+    "id": "googletv",
+    "name": "Google TV",
+    "page": "https://play.google.com/store/apps/details?id=com.google.android.videos&hl=en&gl=IN",
+    "icon": "https://play-lh.googleusercontent.com/jd7E0ieztfPRN6GGZOv0626RJC5CzrrGJTSfrruPyIbagSy6yVDeAJIpcvBoQSyiTeZHP-c2yOOjjL9zSQ_yOw=w128-h128-rw",
+    "file": "googletv.webp"
+  },
+  {
+    "id": "ytmusic",
+    "name": "YouTube Music",
+    "page": "https://play.google.com/store/apps/details?id=com.google.android.apps.youtube.music&hl=en&gl=IN",
+    "icon": "https://play-lh.googleusercontent.com/MyptZXmcCyF59phIWPsNCfHq6zSO_ojEdw_4rMYYWPOGdikSjqeOXcoszBZ053VYpINe5K7ZR9KV1nkFWgxdOw=w128-h128-rw",
+    "file": "ytmusic.webp"
+  },
+  {
+    "id": "spotify",
+    "name": "Spotify",
+    "page": "https://play.google.com/store/apps/details?id=com.spotify.music&hl=en&gl=IN",
+    "icon": "https://play-lh.googleusercontent.com/IzQgYCcnCFCD08GR-3bdtcT8xzOvrNkC84avGT5CwTX2VIqmTmKKJcP_Cd4JoBOdmCMlTndlOzV6hrthg2fOWA=w128-h128-rw",
+    "file": "spotify.webp"
+  },
+  {
+    "id": "jiosaavn",
+    "name": "JioSaavn",
+    "page": "https://play.google.com/store/apps/details?id=com.jio.media.jiobeats&hl=en&gl=IN",
+    "icon": "https://play-lh.googleusercontent.com/tJwz_QkxqQN1yFfb8ItXc2hpfzzSfxA-sdqaPGv51ldOFDXCMSmG0coD0uCzKo5y28rJLzyiIY7tmCHiuOOtdKM=w128-h128-rw",
+    "file": "jiosaavn.webp"
+  },
+  {
+    "id": "gaana",
+    "name": "Gaana",
+    "page": "https://play.google.com/store/apps/details?id=com.gaana&hl=en&gl=IN",
+    "icon": "https://play-lh.googleusercontent.com/Bq007X0n-nx6Wbowl_0bpG16rhPhcF-TLeQTXPO5HPC7z78LNRmsvdr1yNKLwBDoMCK1paI8ty2Zv3M1_w3Q3Q=w128-h128-rw",
+    "file": "gaana.webp"
+  },
+  {
+    "id": "wynk",
+    "name": "Wynk Music",
+    "page": "https://play.google.com/store/apps/details?id=com.bsbportal.music&hl=en&gl=IN",
+    "icon": "https://play-lh.googleusercontent.com/pi37Y9te21qsqYtrK6P0E9MhJoZsYtm8wYXN5cqCb70SbXLbYIMcB9V6M7t869OkRfUe9o3cd-QoVyEoQwVaB7g=w128-h128-rw",
+    "file": "wynk.webp"
+  },
+  {
+    "id": "audible",
+    "name": "Audible",
+    "page": "https://play.google.com/store/apps/details?id=com.audible.application&hl=en&gl=IN",
+    "icon": "https://play-lh.googleusercontent.com/pK4LAE_Faa6mN0CBrOAO_QxFloLuO4FdIQtrAZJaZZUyiRnJ_yHG-Co70Xnxn_j-UQVIBVbfCtbyAzUERtVaTFA=w128-h128-rw",
+    "file": "audible.webp"
+  },
+  {
+    "id": "jio",
+    "name": "MyJio",
+    "page": "https://play.google.com/store/apps/details?id=com.jio.myjio&hl=en&gl=IN",
+    "icon": "https://play-lh.googleusercontent.com/NXcAxgd2mmvEOKDR7vZSywec4JYoFTsS7VzrGkh2QwOgCXbiAT_3qRqY3tpmkVomRDdv2IgxZRQapqBnFErg7w=w128-h128-rw",
+    "file": "jio.webp"
+  },
+  {
+    "id": "airtel",
+    "name": "Airtel Thanks",
+    "page": "https://play.google.com/store/apps/details?id=com.myairtelapp&hl=en&gl=IN",
+    "icon": "https://play-lh.googleusercontent.com/v00UJ-fq2PRJgxukJtiZY5JVGcP-uEi44zRWWIgTaB7kw6lZ8KOxpqTsIQe-MLcS_ojUT3XXY-XfoiCUL1J9lg=w128-h128-rw",
+    "file": "airtel.webp"
+  },
+  {
+    "id": "googleone",
+    "name": "Google One",
+    "page": "https://play.google.com/store/apps/details?id=com.google.android.apps.subscriptions.red&hl=en&gl=IN",
+    "icon": "https://play-lh.googleusercontent.com/pnaxOl9i4YnkYKGMYkH17y_hA_FJOZRahlRGHQaaEGuLwPme68AfPShN2na5dEGOsem3hEzFvWXMz62WPVx8=w128-h128-rw",
+    "file": "googleone.webp"
+  }
+]

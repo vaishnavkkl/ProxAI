@@ -27,6 +27,8 @@ export const SUBSCRIPTION_APPS: SubscriptionApp[] = [
   { id: 'xstream', name: 'Airtel Xstream', packageName: 'in.airtel.tv', kind: 'ott' },
   { id: 'mxplayer', name: 'MX Player', packageName: 'com.mxtech.videoplayer.ad', kind: 'ott' },
   { id: 'sunnxt', name: 'Sun NXT', packageName: 'com.suntv.sunnxt', kind: 'ott' },
+  { id: 'manoramamax', name: 'ManoramaMAX', packageName: 'com.mmtv.manoramamax.android', kind: 'ott' },
+  { id: 'sainaplay', name: 'Saina Play', packageName: 'com.saina', kind: 'ott' },
   { id: 'aha', name: 'aha', packageName: 'ahaflix.tv', kind: 'ott' },
   { id: 'hoichoi', name: 'Hoichoi', packageName: 'com.viewlift.hoichoi', kind: 'ott' },
   { id: 'lionsgate', name: 'Lionsgate Play', packageName: 'com.lionsgateplay.videostar', kind: 'ott' },
@@ -56,6 +58,16 @@ export const SUBSCRIPTION_APPS: SubscriptionApp[] = [
 export function subscriptionAppPackages(): string[] {
   return SUBSCRIPTION_APPS.map((app) => app.packageName);
 }
+
+// Android resolves each URL against its specific package; a browser cannot count as the app.
+export const SUBSCRIPTION_LINKS: Record<string, string> = {
+  netflix: 'https://www.netflix.com/', prime: 'https://www.primevideo.com/',
+  hotstar: 'https://www.hotstar.com/in', sonyliv: 'https://www.sonyliv.com/',
+  zee5: 'https://www.zee5.com/', sunnxt: 'https://www.sunnxt.com/',
+  manoramamax: 'https://www.manoramamax.com/', sainaplay: 'https://www.sainaplay.com/',
+  spotify: 'spotify:home', ytmusic: 'https://music.youtube.com/',
+  youtube: 'https://www.youtube.com/', jiosaavn: 'https://www.jiosaavn.com/',
+};
 
 export function kindLabel(kind: SubscriptionKind): string {
   return KIND_LABELS[kind];

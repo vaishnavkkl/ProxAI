@@ -1,12 +1,9 @@
-import { clearSmsDerivedLedger, getScanMeta, loadEvents, loadSubscriptions, setScanMeta } from '@/services/database';
+import { clearProcessedHashes, getScanMeta, setScanMeta } from '@/services/database';
 import { markLookbackExpanded } from '@/services/scan-window';
-import { useEventStore } from '@/store/event-store';
 import { useProcessedStore } from '@/store/processed-store';
 import { useSettingsStore } from '@/store/settings-store';
-import { useSubscriptionStore } from '@/store/subscription-store';
-import { useTransactionStore } from '@/store/transaction-store';
 
-export const PARSER_VERSION = '10';
+export const PARSER_VERSION = '15';
 
 export async function ensureParserRevision(): Promise<boolean> {
   const current = await getScanMeta('parser_version');
@@ -14,10 +11,8 @@ export async function ensureParserRevision(): Promise<boolean> {
     return false;
   }
 
-  await clearSmsDerivedLedger();
-  useTransactionStore.getState().replaceAll([]);
-  useSubscriptionStore.getState().replaceAll(await loadSubscriptions());
-  useEventStore.getState().replaceAll(await loadEvents());
+  // Re-scan for new modules without deleting the user's existing ledger or completed tasks.
+  await clearProcessedHashes();
   useProcessedStore.getState().replaceAll([]);
   await markLookbackExpanded(useSettingsStore.getState().scanLookbackMonths);
   await setScanMeta('parser_version', PARSER_VERSION);

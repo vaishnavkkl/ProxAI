@@ -51,10 +51,12 @@ export function fileUriForName(name: string): string {
 
 export function findCachedFile(remoteUrl: string): string | null {
   if (remoteUrl.startsWith('file://')) {
-    return remoteUrl;
+    const file = new File(remoteUrl);
+    return file.exists && file.size > 0 ? remoteUrl : null;
   }
   if (remoteUrl.startsWith('/')) {
-    return `file://${remoteUrl}`;
+    const file = new File(`file://${remoteUrl}`);
+    return file.exists && file.size > 0 ? file.uri : null;
   }
 
   try {
@@ -64,18 +66,13 @@ export function findCachedFile(remoteUrl: string): string | null {
     }
 
     const expected = cacheNameFromUrl(remoteUrl);
-    const base = basenameFromUrl(remoteUrl);
 
     for (const entry of directory.list()) {
       if (!(entry instanceof File)) {
         continue;
       }
-      if (
-        entry.name === expected ||
-        entry.name === base ||
-        entry.name.endsWith(`_${base}`) ||
-        entry.name.endsWith(base)
-      ) {
+      // tokenizer.json is shared as a basename by unrelated models. Match the full URL key.
+      if (entry.name === expected && entry.size > 0) {
         return toFileUri(entry.uri);
       }
     }
@@ -120,7 +117,7 @@ export function resolveOfflineSources(preferred: ModelSources | null): ModelSour
       return exact;
     }
   }
-  return findAnyLocalTrio();
+  return null;
 }
 
 export function hasCachedSources(sources: ModelSources | null): boolean {

@@ -1,3 +1,5 @@
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/app-text';
@@ -18,7 +20,8 @@ type FinanceAnalysisProps = {
 };
 
 export function FinanceAnalysis({ sort, onSort }: FinanceAnalysisProps) {
-  const items = useTransactionStore((s) => s.items);
+  const [insights, setInsights] = useState(false);
+  const items = useTransactionStore((s) => s.financeItems);
   const bankId = useUiStore((s) => s.financeBankId);
   const setFinanceCategory = useUiStore((s) => s.setFinanceCategory);
   const salary = useBudgetStore((s) => s.salary);
@@ -37,19 +40,39 @@ export function FinanceAnalysis({ sort, onSort }: FinanceAnalysisProps) {
           {selected ? selected.label : summary.monthLabel}
         </AppText>
         <AppText style={styles.onHero} variant="h1">
-          {accountView
-            ? formatInr(summary.net)
-            : salary > 0
-              ? formatInr(summary.leftover)
-              : 'Add paycheck'}
+          {formatInr(summary.net)}
         </AppText>
         <AppText style={styles.onHeroMuted} variant="bodySmall">
-          {accountView
-            ? 'Income minus spends in this account this month'
-            : 'Left after bills and this month’s spends'}
+          {'Credits minus debits this month'}
         </AppText>
       </View>
 
+      <View style={styles.row}>
+        <FinanceStat
+          hint="Money received"
+          icon="trending-up-outline"
+          label="Credited"
+          tone="in"
+          value={formatInr(summary.income)}
+        />
+        <FinanceStat
+          hint="Money paid"
+          icon="trending-down-outline"
+          label="Debited"
+          tone="out"
+          value={formatInr(summary.spend)}
+        />
+        <FinanceStat
+          hint="In minus out"
+          icon="pulse-outline"
+          label="Net"
+          tone="net"
+          value={formatInr(summary.net)}
+        />
+      </View>
+
+<Pressable accessibilityRole="button" accessibilityState={{ expanded: insights }} onPress={() => setInsights(!insights)} style={styles.insightsButton}><Ionicons name="analytics-outline" size={23} color={colors.primary[600]} /><AppText variant="labelRegular" style={styles.insightsLabel}>Budget & spending insights</AppText><Ionicons name={insights ? "chevron-up" : "chevron-down"} size={20} color={colors.primary[600]} /></Pressable>
+{insights ? <View style={styles.block}>
       <View style={styles.row}>
         <FinanceStat
           hint="Safe remaining"
@@ -80,30 +103,6 @@ export function FinanceAnalysis({ sort, onSort }: FinanceAnalysisProps) {
         />
       </View>
 
-      <View style={styles.row}>
-        <FinanceStat
-          hint="Credits"
-          icon="trending-up-outline"
-          label="In"
-          tone="in"
-          value={formatInr(summary.income)}
-        />
-        <FinanceStat
-          hint="Variable"
-          icon="trending-down-outline"
-          label="Out"
-          tone="out"
-          value={formatInr(summary.spend)}
-        />
-        <FinanceStat
-          hint="In minus out"
-          icon="pulse-outline"
-          label="Net"
-          tone="net"
-          value={formatInr(summary.net)}
-        />
-      </View>
-
       {summary.fixed > 0 || summary.emiOwed > 0 ? (
         <View style={styles.card}>
           <AppText variant="labelRegular">Fixed this month {formatInr(summary.fixed)}</AppText>
@@ -131,20 +130,9 @@ export function FinanceAnalysis({ sort, onSort }: FinanceAnalysisProps) {
         </View>
       ) : null}
 
-      {summary.reviews.length > 0 ? (
-        <View style={styles.card}>
-          <AppText variant="h4">Review</AppText>
-          {summary.reviews.map((item) => (
-            <View key={item.id} style={styles.review}>
-              <AppText variant="labelRegular">{item.merchant ?? item.category}</AppText>
-              <AppText variant="bodySmall">{item.review?.trim() || item.note}</AppText>
-            </View>
-          ))}
-        </View>
-      ) : null}
-
+</View> : null}
       <View style={styles.listHead}>
-        <AppText variant="h4">Recent spends</AppText>
+        <AppText variant="h4">Transactions</AppText>
         <View style={styles.sorts}>
           <Pressable
             accessibilityRole="button"
@@ -175,6 +163,7 @@ export function FinanceAnalysis({ sort, onSort }: FinanceAnalysisProps) {
 }
 
 const styles = StyleSheet.create({
+  insightsButton: { minHeight: 56, padding: spacing.md, flexDirection: "row", alignItems: "center", gap: spacing.sm, borderRadius: borderRadius.lg, backgroundColor: colors.primary[50] }, insightsLabel: { flex: 1, color: colors.primary[600] },
   block: {
     gap: spacing.lg,
   },

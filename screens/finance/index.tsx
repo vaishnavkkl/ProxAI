@@ -1,6 +1,7 @@
+import { KeyboardScreen } from '@/components/keyboard-screen';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { type Href, useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { FlatList, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -32,15 +33,19 @@ function FinanceHeader({
   onSort,
   category,
   onClearCategory,
+  flow,
+  onFlow,
 }: {
   onOpenPlan: () => void;
   sort: LedgerSort;
   onSort: (sort: LedgerSort) => void;
   category: string | null;
   onClearCategory: () => void;
+  flow: 'all' | 'debit' | 'credit';
+  onFlow: (flow: 'all' | 'debit' | 'credit') => void;
 }) {
   const router = useRouter();
-  const items = useTransactionStore((s) => s.items);
+  const items = useTransactionStore((s) => s.financeItems);
   const bankId = useUiStore((s) => s.financeBankId);
   const setFinanceBankId = useUiStore((s) => s.setFinanceBankId);
   const accounts = listBankAccounts(items);
@@ -77,7 +82,7 @@ function FinanceHeader({
         </Pressable>
       </View>
       {accounts.length > 0 ? (
-        <View style={styles.banks}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.banks}>
           <Pressable
             accessibilityRole="button"
             accessibilityState={{ selected: !bankId }}
@@ -107,7 +112,7 @@ function FinanceHeader({
               </Pressable>
             );
           })}
-        </View>
+        </ScrollView>
       ) : null}
       {category ? (
         <Pressable
@@ -122,6 +127,7 @@ function FinanceHeader({
         </Pressable>
       ) : null}
       <FinanceAnalysis onSort={onSort} sort={sort} />
+      <View style={styles.flowTabs}>{(['all', 'debit', 'credit'] as const).map((value) => <Pressable key={value} accessibilityRole="button" accessibilityState={{ selected: flow === value }} onPress={() => onFlow(value)} style={[styles.flowTab, flow === value && styles.flowOn]}><AppText variant="labelSmall" style={flow === value ? styles.bankLabelOn : undefined}>{value === 'all' ? 'All transactions' : value === 'debit' ? 'Debited' : 'Credited'}</AppText></Pressable>)}</View>
     </View>
   );
 }
@@ -132,22 +138,30 @@ function EmptyFinance() {
       <View style={styles.iconWrap}>
         <Ionicons color={colors.primary[600]} name="receipt-outline" size={28} />
       </View>
-      <AppText variant="h4">No spends yet</AppText>
+      <AppText variant="h4">No transactions to show</AppText>
       <AppText style={styles.copy} variant="bodyRegular">
-        Bank SMS will land here after Refresh. Open the sliders to set paycheck and bills.
+        Refresh reads your bank alerts. Try another account or transaction filter to see more.
       </AppText>
     </View>
   );
 }
 
 export function Finance() {
-  const items = useTransactionStore((s) => s.items);
+  const items = useTransactionStore((s) => s.financeItems);
   const category = useUiStore((s) => s.financeCategory);
   const bankId = useUiStore((s) => s.financeBankId);
   const setFinanceCategory = useUiStore((s) => s.setFinanceCategory);
+  const setFinanceBankId = useUiStore((s) => s.setFinanceBankId);
+  useEffect(() => {
+    if (bankId && !items.some((item) => inBankAccount(item, bankId))) {
+      setFinanceBankId(null);
+    }
+  }, [bankId, items, setFinanceBankId]);
   const [planOpen, setPlanOpen] = useState(false);
   const [sort, setSort] = useState<LedgerSort>('recent');
+  const [flow, setFlow] = useState<'all' | 'debit' | 'credit'>('all');
   const scoped = items.filter((item) => {
+    if (flow !== 'all' && (flow === 'credit') !== (item.category === 'income')) return false;
     if (category && item.category !== category) {
       return false;
     }
@@ -175,6 +189,8 @@ export function Finance() {
             onSort={setSort}
             sort={sort}
             category={category}
+            flow={flow}
+            onFlow={setFlow}
           />
         }
         renderItem={renderTransaction}
@@ -187,6 +203,7 @@ export function Finance() {
         }}
         visible={planOpen}>
         <SafeAreaView edges={['top']} style={styles.sheet}>
+        <KeyboardScreen>
           <View style={styles.sheetBar}>
             <AppText variant="h3">Paycheck and bills</AppText>
             <Pressable
@@ -199,16 +216,19 @@ export function Finance() {
               <Ionicons color={colors.neutral[900]} name="close" size={22} />
             </Pressable>
           </View>
-          <ScrollView contentContainerStyle={styles.sheetBody} showsVerticalScrollIndicator={false}>
+          <ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={styles.sheetBody} showsVerticalScrollIndicator={false}>
             <MoneyPlan />
           </ScrollView>
-        </SafeAreaView>
+        </KeyboardScreen>
+      </SafeAreaView>
       </Modal>
     </ScreenScaffold>
   );
 }
 
 const styles = StyleSheet.create({
+  flowTabs: { flexDirection: 'row', padding: spacing.xs, backgroundColor: colors.neutral[200], borderRadius: borderRadius.lg },
+  flowTab: { flex: 1, minHeight: 48, alignItems: 'center', justifyContent: 'center', borderRadius: borderRadius.md }, flowOn: { backgroundColor: colors.neutral[0] },
   listFill: {
     flex: 1,
   },
@@ -245,7 +265,6 @@ const styles = StyleSheet.create({
   },
   banks: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: spacing.sm,
   },
   bankChip: {

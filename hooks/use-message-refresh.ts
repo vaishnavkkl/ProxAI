@@ -98,12 +98,13 @@ export function useMessageRefresh() {
         setProgress(progress, label);
       }, { skipMail: skipMailScan });
 
-      const found = result.transactions + result.events + result.subscriptions;
+      const found = result.transactions + result.events + result.subscriptions + (result.life ?? 0) + (result.screenshotItems ?? 0);
       const extras = [
         result.read ? `${result.read} SMS` : '',
         result.calendar ? `${result.calendar} calendar` : '',
-        result.mail ? `${result.mail} Gmail` : '',
+        result.mail ? `${result.mail} calendar notices` : '',
         result.subscriptions ? `${result.subscriptions} subs` : '',
+        result.screenshots ? `${result.screenshots} screenshots, ${result.screenshotItems ?? 0} new items` : '',
       ]
         .filter(Boolean)
         .join(', ');
@@ -113,7 +114,7 @@ export function useMessageRefresh() {
       if (found > 0) {
         setToast({
           kind: 'success',
-          message: `Found ${result.transactions} spends, ${result.events} reminders.${read}${again}`,
+          message: `Found ${result.life ?? 0} life items, ${result.events} events, ${result.transactions} transactions.${read}${again}`,
         });
         return;
       }

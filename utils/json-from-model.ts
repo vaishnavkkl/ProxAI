@@ -43,3 +43,8 @@ export function parseModelJson(raw: string): ParsedBatch {
 
   throw new Error('empty');
 }
+
+export function parseCompleteModelJson(raw: string): ParsedBatch {
+  // A recovered fragment must not acknowledge an entire input batch.
+  return parsedBatchSchema.parse(parseObject(raw));
+}

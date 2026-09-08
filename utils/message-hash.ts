@@ -11,5 +11,6 @@ export async function hashMessage(message: IncomingMessage): Promise<string> {
 }
 
 export async function hashMessageContent(message: IncomingMessage): Promise<string> {
-  return digest(`${message.sender.trim().toLowerCase()}|${message.body.trim()}`);
+  // Identical recurring notices on different days are different events.
+  return digest(`${message.sender.trim().toLowerCase()}|${message.date}|${message.body.trim()}`);
 }

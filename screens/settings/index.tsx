@@ -9,6 +9,7 @@ import { ScheduleEditor } from '@/components/schedule-editor';
 import { ScreenScaffold } from '@/components/screen-scaffold';
 import { ScanLookback } from '@/components/scan-lookback';
 import { SettingsRow } from '@/components/settings-row';
+import { SectionHero } from '@/components/section-hero';
 import { getDeviceSpecs, type DeviceSpecs } from '@/services/device-specs';
 import { FINLIFE_LLM } from '@/services/llm-config';
 import { formatWindows } from '@/services/llm-schedule';
@@ -31,7 +32,6 @@ import { useSettingsStore } from '@/store/settings-store';
 import { useUiStore } from '@/store/ui-store';
 import { borderRadius, colors, spacing } from '@/styles';
 import { formatBytes } from '@/utils/format-bytes';
-import { shareText } from '@/utils/share-text';
 
 function storageLine() {
   const storage = getModelStorageInfo();
@@ -132,14 +132,8 @@ export function Settings() {
     };
   }, [modelId, offlineMode, customModelUrl, customTokenizerUrl, customTokenizerConfigUrl]);
 
-  async function copy(label: string, value: string) {
-    const shared = await shareText(value, label);
-    if (shared) {
-      setToast({ kind: 'success', message: `${label} ready to copy` });
-    }
-  }
-
   function confirmClearDatabase() {
+    if (useUiStore.getState().isProcessing) { setToast({ kind: 'info', message: 'Wait for the current scan before clearing data.' }); return; }
     Alert.alert(
       'Clear local database?',
       'For testing. Scanned messages can be read again on Refresh. Model files and Settings stay.',
@@ -167,6 +161,7 @@ export function Settings() {
   }
 
   function confirmClearDownloads() {
+    if (useUiStore.getState().isProcessing) { setToast({ kind: 'info', message: 'Wait for the current scan before clearing models.' }); return; }
     Alert.alert('Remove downloaded models', 'Deletes cached .pte and tokenizer files on this device.', [
       { text: 'Cancel', style: 'cancel' },
       {
@@ -186,12 +181,12 @@ export function Settings() {
 
   return (
     <ScreenScaffold>
-      <AppText variant="overline">Settings</AppText>
-      <AppText variant="h2">Preferences</AppText>
+      <SectionHero title="Make it yours" subtitle="Your preferences, privacy and connected sources" icon="options-outline" />
 
       <View style={styles.list}>
+        <SettingsRow icon="earth-outline" title="Event region" value="Kerala & India. Regional holidays are filtered; your personal bookings and appointments stay visible." />
         <SettingsRow
-          title="Offline mode"
+          icon="cloud-offline-outline" title="Offline mode"
           value={
             offlineMode
               ? 'On — SMS and amounts never leave this phone. Refresh only uses a model already on disk.'
@@ -217,11 +212,11 @@ export function Settings() {
         />
 
         <SettingsRow
-          title="Gmail account"
+          icon="calendar-number-outline" title="Calendar account"
           value={
             googleAccount
-              ? `${googleAccount}. Tap to choose again on the next Refresh.`
-              : 'Refresh will ask which account to read when more than one Gmail is on this phone.'
+              ? `${googleAccount}. Reads calendar entries, not your email inbox. Tap to choose again.`
+              : 'Choose a calendar account during Refresh. Saved email screenshots can be read from the dashboard.'
           }
           onPress={
             googleAccount
@@ -261,17 +256,17 @@ export function Settings() {
         <SettingsRow
           action={showModels ? 'Hide' : 'Change'}
           expanded={showModels}
-          title="On-device engine"
+          icon="sparkles-outline" title="On-device engine"
           value={`${FINLIFE_LLM.engine} · ${catalog.label}${cached ? ' · cached' : ''}`}
           onPress={() => {
             setShowModels((open) => !open);
           }}
         />
-        {showModels ? <ModelPicker /> : null}
+        {showModels ? <View style={styles.expandedPanel}><ModelPicker /></View> : null}
 
         <SettingsRow
           action="Recheck"
-          title="Model status"
+          icon="pulse-outline" title="Model status"
           value={modelStatus}
           onPress={() => {
             refreshStatus();
@@ -279,7 +274,7 @@ export function Settings() {
           }}
         />
         <SettingsRow
-          title="Model in RAM"
+          icon="hardware-chip-outline" title="Model in RAM"
           value={
             modelInRam
               ? 'Loaded — only one copy. Tap Unload to free memory now.'
@@ -351,17 +346,13 @@ export function Settings() {
         ) : null}
 
         <SettingsRow
-          action="Copy"
-          title="Download folder"
+          icon="folder-open-outline" title="Download folder"
           value={modelPath}
-          onPress={() => {
-            void copy('Download folder', modelPath);
-          }}
         />
 
         <SettingsRow
           action="Recheck"
-          title="Downloaded size"
+          icon="download-outline" title="Downloaded size"
           value={modelDisk}
           onPress={() => {
             refreshStorage();
@@ -383,33 +374,21 @@ export function Settings() {
         />
 
         <SettingsRow
-          action="Copy"
-          title="This device"
+          icon="phone-portrait-outline" title="This device"
           value={deviceLine}
-          onPress={() => {
-            void copy('This device', deviceLine);
-          }}
         />
         <SettingsRow
-          action="Copy"
-          title="CPU / ABI"
+          icon="speedometer-outline" title="CPU / ABI"
           value={chipLine}
-          onPress={() => {
-            void copy('CPU / ABI', chipLine);
-          }}
         />
         <SettingsRow
-          action="Copy"
-          title="RAM"
+          icon="server-outline" title="RAM"
           value={ramLine}
-          onPress={() => {
-            void copy('RAM', ramLine);
-          }}
         />
 
         <SettingsRow
           action="Allow"
-          title="Unread SMS"
+          icon="chatbox-ellipses-outline" title="SMS access"
           value={smsLine}
           onPress={() => {
             void requestSmsPermission().then((allowed) => {
@@ -427,16 +406,16 @@ export function Settings() {
         <SettingsRow
           action={showSchedule ? 'Hide' : 'Change'}
           expanded={showSchedule}
-          title="LLM schedule"
+          icon="alarm-outline" title="LLM schedule"
           value={formatWindows(windows)}
           onPress={() => {
             setShowSchedule((open) => !open);
           }}
         />
-        {showSchedule ? <ScheduleEditor /> : null}
+        {showSchedule ? <View style={styles.expandedPanel}><ScheduleEditor /></View> : null}
 
         <SettingsRow
-          title="Privacy"
+          icon="shield-checkmark-outline" title="Privacy"
           value={
             privacyOn
               ? 'On — SMS and amounts stay on this phone. Play Store may restrict READ_SMS.'
@@ -463,14 +442,14 @@ export function Settings() {
 
         <SettingsRow
           action="Clear"
-          title="Clear database"
+          icon="trash-outline" title="Clear database"
           value="Testing only. Wipes scanned messages and the ledger so Refresh can run again."
           onPress={confirmClearDatabase}
         />
 
         <SettingsRow
           action="Open"
-          title="About"
+          icon="information-circle-outline" title="About"
           value={`ProxAI ${version} · ${FINLIFE_LLM.downloadHint}`}
           onPress={() => {
             void openBrowserAsync(MODEL_SOURCE_ORG, {
@@ -484,6 +463,7 @@ export function Settings() {
 }
 
 const styles = StyleSheet.create({
+  expandedPanel: { padding: spacing.lg, marginTop: -spacing.sm, borderWidth: 1, borderTopWidth: 0, borderColor: colors.primary[100], backgroundColor: colors.neutral[0], borderBottomLeftRadius: borderRadius.xl, borderBottomRightRadius: borderRadius.xl },
   list: {
     gap: spacing.sm,
   },

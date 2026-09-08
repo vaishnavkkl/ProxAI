@@ -53,7 +53,7 @@ function renderBubble({ item }: { item: CoachBubble }) {
 export function Coach() {
   const router = useRouter();
   const listRef = useRef<FlatList<CoachBubble>>(null);
-  const items = useTransactionStore((s) => s.items);
+  const items = useTransactionStore((s) => s.financeItems);
   const events = useEventStore((s) => s.items);
   const subscriptions = useSubscriptionStore((s) => s.items);
   const salary = useBudgetStore((s) => s.salary);

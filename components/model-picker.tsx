@@ -19,6 +19,7 @@ import { useUiStore } from '@/store/ui-store';
 import { borderRadius, colors, spacing } from '@/styles';
 
 export function ModelPicker() {
+  const processing = useUiStore((s) => s.isProcessing);
   const modelId = useSettingsStore((s) => s.modelId);
   const customModelUrl = useSettingsStore((s) => s.customModelUrl);
   const customTokenizerUrl = useSettingsStore((s) => s.customTokenizerUrl);
@@ -34,6 +35,7 @@ export function ModelPicker() {
   const selected = getCatalogModel(modelId);
 
   function selectModel(id: ModelId) {
+    if (processing) return;
     setModelId(id);
     setToast({
       kind: 'success',
@@ -42,6 +44,7 @@ export function ModelPicker() {
   }
 
   function saveCustomUrls() {
+    if (processing) return;
     if (!isHttpsUrl(modelUrl) || !isHttpsUrl(tokenizerUrl) || !isHttpsUrl(configUrl)) {
       setToast({ kind: 'error', message: 'Each custom field needs an https:// URL' });
       return;
@@ -79,6 +82,7 @@ export function ModelPicker() {
           <Pressable
             key={item.id}
             accessibilityRole="button"
+            disabled={processing}
             accessibilityState={{ selected: active }}
             onPress={() => {
               selectModel(item.id);
@@ -92,16 +96,18 @@ export function ModelPicker() {
             <AppText variant="bodySmall">
               {item.sizeHint} · {item.ramHint}
             </AppText>
-            <AppText variant="caption">{item.note}</AppText>
-            {item.warn ? (
+            {active ? <AppText variant="caption">{item.note}</AppText> : null}
+            {active && item.license ? <AppText variant="caption">{item.license} · no paid inference API</AppText> : null}
+            {active && item.warn ? (
               <AppText style={styles.warn} variant="caption">
-                Larger than the 300 MB budget. Use only on 6 GB+ RAM phones.
+                Large download. Loading checks available memory; performance is not yet benchmarked.
               </AppText>
             ) : null}
           </Pressable>
         );
       })}
 
+      {modelId === 'custom' ? <View style={styles.block}>
       <AppText variant="labelSmall">Custom .pte URL</AppText>
       <TextInput
         accessibilityLabel="Custom model URL"
@@ -145,6 +151,7 @@ export function ModelPicker() {
       </Pressable>
 
       <AppText variant="caption">{CUSTOM_URL_HELP}</AppText>
+      </View> : null}
       <Pressable
         accessibilityRole="button"
         onPress={() => {

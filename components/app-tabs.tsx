@@ -3,13 +3,11 @@ import { Tabs } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { GradientTabButton } from '@/components/gradient-tab-button';
-import { TabBarOverlay } from '@/components/tab-bar-overlay';
+import { HapticTab } from '@/components/haptic-tab';
 import { colors, layout } from '@/styles';
 import { bottomSafeInset } from '@/utils/safe-area';
 
-const ICON_SIZE = 22;
-const inactiveIcon = 'rgba(255,255,255,0.72)';
+const ICON_SIZE = 24;
 
 export function AppTabs() {
   const insets = useSafeAreaInsets();
@@ -22,10 +20,10 @@ export function AppTabs() {
         safeAreaInsets={{ top: 0, bottom: 0, left: 0, right: 0 }}
         screenOptions={{
           headerShown: false,
-          tabBarActiveTintColor: colors.neutral[0],
-          tabBarInactiveTintColor: inactiveIcon,
-          tabBarButton: GradientTabButton,
-          tabBarBackground: TabBarOverlay,
+          tabBarActiveTintColor: colors.primary[600],
+          tabBarInactiveTintColor: colors.neutral[600],
+          tabBarButton: HapticTab,
+          tabBarLabelPosition: 'below-icon',
           tabBarHideOnKeyboard: true,
           sceneStyle: {
             backgroundColor: colors.neutral[50],
@@ -34,15 +32,16 @@ export function AppTabs() {
           tabBarLabelStyle: {
             fontSize: 11,
             fontWeight: '600',
-            letterSpacing: 0.3,
-            textTransform: 'uppercase',
+            marginTop: 3,
+            marginBottom: 4,
           },
           tabBarStyle: {
-            backgroundColor: 'transparent',
-            borderTopWidth: 0,
+            backgroundColor: colors.neutral[0],
+            borderTopWidth: 1,
+            borderTopColor: colors.neutral[200],
             elevation: 0,
             height: layout.tabBarHeight + bottomPad,
-            paddingTop: 8,
+            paddingTop: 6,
             paddingBottom: bottomPad,
             margin: 0,
           },
@@ -85,7 +84,7 @@ export function AppTabs() {
         <Tabs.Screen
           name="subscriptions"
           options={{
-            title: 'Subs',
+            title: 'Renewals',
             tabBarAccessibilityLabel: 'Subscriptions',
             tabBarIcon: ({ color, focused }) => (
               <Ionicons color={color} name={focused ? 'card' : 'card-outline'} size={ICON_SIZE} />
