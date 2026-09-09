@@ -1,6 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Image } from 'expo-image';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -28,6 +28,7 @@ import {
 } from '@/services/text-to-image-catalog';
 import { useSettingsStore } from '@/store/settings-store';
 import { useUiStore } from '@/store/ui-store';
+import { useModelDownloadStore } from '@/store/model-download-store';
 import { borderRadius, colors, gradients, layout, spacing } from '@/styles';
 import { formatBytes } from '@/utils/format-bytes';
 import { bottomSafeInset } from '@/utils/safe-area';
@@ -38,44 +39,40 @@ export function Imagine() {
   const setToast = useUiStore((s) => s.setToast);
   const variant = useSettingsStore((s) => s.ttiVariantId) ?? DEFAULT_TTI_VARIANT;
   const isProcessing = useUiStore((s) => s.isProcessing);
-  const workKind = useUiStore((s) => s.workKind);
+  const downloadKind = useModelDownloadStore((s) => s.kind);
   const imageInRam = useUiStore((s) => s.imageInRam);
   const imageBusy = useUiStore((s) => s.imageBusy);
-  const llmProgress = useUiStore((s) => s.llmProgress);
-  const llmLabel = useUiStore((s) => s.llmLabel);
+  const downloadProgress = useModelDownloadStore((s) => s.progress);
+  const downloadLabel = useModelDownloadStore((s) => s.label);
   const mounted = useRef(true);
   const [prompt, setPrompt] = useState(TTI_PROMPTS[0]);
   const [seedText, setSeedText] = useState('');
   const [imageUri, setImageUri] = useState<string | null>(null);
-  const [cached, setCached] = useState(false);
-  const [ready, setReady] = useState(false);
+  const ready = isTextToImageAvailable();
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(0);
   const [label, setLabel] = useState('');
+  // File cache changes when a download/generation finishes, without a new variant.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const cached = useMemo(() => hasCachedTextToImage(variant), [variant, downloadKind, busy]);
 
   const selected = getTtiVariant(variant);
-  const working = busy || imageBusy;
-  const scanBusy = isProcessing && workKind !== 'download';
-  const blocked = working || scanBusy;
-  const available = isTextToImageAvailable();
+  const working = busy || imageBusy || downloadKind === 'image';
+  const scanBusy = isProcessing;
+  const blocked = working || scanBusy || (!cached && downloadKind != null);
+  const available = ready;
   const loaded = imageInRam || isTextToImageLoaded();
-  const meterProgress = busy ? progress : llmProgress;
-  const meterLabel = busy ? label : llmLabel;
+  const meterProgress = busy ? progress : downloadProgress;
+  const meterLabel = busy ? label : downloadLabel;
 
   useEffect(() => {
     mounted.current = true;
     attachImagine();
-    setReady(isTextToImageAvailable());
-    setBusy(imageBusy);
     return () => {
       mounted.current = false;
       detachImagine();
     };
   }, []);
-
-  useEffect(() => {
-    setCached(hasCachedTextToImage(variant));
-  }, [variant]);
 
   function seedValue() {
     const parsed = Number.parseInt(seedText.trim(), 10);
@@ -110,15 +107,13 @@ export function Imagine() {
       if (!mounted.current) {
         return;
       }
-      setCached(true);
       setToast({ kind: 'success', message: `${selected.modelName} ${selected.label} is on this phone.` });
     } catch (error) {
       if (!mounted.current) {
         return;
       }
       if (error instanceof Error && error.message === TTI_STOPPED) {
-        setCached(hasCachedTextToImage(variant));
-        setToast({ kind: 'info', message: 'Stopped. Partial files stay on this phone.' });
+        setToast({ kind: 'info', message: 'Download stopped. Tap Save model to try again.' });
         return;
       }
       setToast({ kind: 'error', message: failMessage(error) });
@@ -152,7 +147,6 @@ export function Imagine() {
         return;
       }
       setImageUri(uri);
-      setCached(true);
       setToast({ kind: 'success', message: 'Image saved on this phone.' });
     } catch (error) {
       if (!mounted.current) {
@@ -160,7 +154,6 @@ export function Imagine() {
       }
       const message = error instanceof Error ? error.message : 'Could not generate the image.';
       if (message === TTI_STOPPED) {
-        setCached(hasCachedTextToImage(variant));
         setToast({ kind: 'info', message: 'Stopped. Downloaded files stay on this phone.' });
         return;
       }

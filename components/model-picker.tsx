@@ -16,10 +16,13 @@ import {
 import { hasCachedSources } from '@/services/model-storage';
 import { useSettingsStore } from '@/store/settings-store';
 import { useUiStore } from '@/store/ui-store';
+import { useModelDownloadStore } from '@/store/model-download-store';
 import { borderRadius, colors, spacing } from '@/styles';
 
 export function ModelPicker() {
-  const processing = useUiStore((s) => s.isProcessing);
+  const scanning = useUiStore((s) => s.isProcessing);
+  const downloading = useModelDownloadStore((s) => s.kind === 'llm');
+  const processing = scanning || downloading;
   const modelId = useSettingsStore((s) => s.modelId);
   const customModelUrl = useSettingsStore((s) => s.customModelUrl);
   const customTokenizerUrl = useSettingsStore((s) => s.customTokenizerUrl);
@@ -37,6 +40,9 @@ export function ModelPicker() {
   function selectModel(id: ModelId) {
     if (processing) return;
     setModelId(id);
+    if (getCatalogModel(id).defaultReplyLanguage === 'ml') {
+      useSettingsStore.getState().setOcrLanguage('ml');
+    }
     setToast({
       kind: 'success',
       message: id === 'custom' ? 'Paste three HTTPS URLs below' : `${getCatalogModel(id).label} selected`,
@@ -91,6 +97,7 @@ export function ModelPicker() {
             style={[styles.card, active ? styles.cardActive : undefined]}>
             <View style={styles.cardTop}>
               <AppText variant="labelRegular">{item.label}</AppText>
+              {item.malayalam ? <AppText style={styles.badge}>മലയാളം</AppText> : null}
               {item.recommended ? <AppText style={styles.badge}>Recommended</AppText> : null}
               {item.compact ? <AppText style={styles.compact}>Fits older phones</AppText> : null}
               {item.warn ? <AppText style={styles.warnBadge}>Large</AppText> : null}

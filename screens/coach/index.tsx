@@ -1,10 +1,11 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useNavigation } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
   Pressable,
+  ScrollView,
   StyleSheet,
   TextInput,
   View,
@@ -58,7 +59,7 @@ function keyExtractor(item: CoachBubble) {
   return item.id;
 }
 
-function CoachBubbleRow({ item }: { item: CoachBubble }) {
+const CoachBubbleRow = memo(function CoachBubbleRow({ item }: { item: CoachBubble }) {
   const pinned = useCoachStore((s) => s.pins.some((pin) => pin.messageId === item.id));
   const togglePin = useCoachStore((s) => s.togglePin);
   const setToast = useUiStore((s) => s.setToast);
@@ -67,10 +68,10 @@ function CoachBubbleRow({ item }: { item: CoachBubble }) {
 
   return (
     <View style={user ? styles.userWrap : styles.botWrap}>
-      <AppText style={user ? styles.userText : styles.botText} variant="bodyRegular">
+      <AppText selectable={!item.pending} style={user ? styles.userText : styles.botText} variant="bodyRegular">
         {user ? item.text : toInrText(item.text)}
       </AppText>
-      {user ? (
+      {item.pending ? null : user ? (
         when ? <AppText style={styles.userTime} variant="caption">{when}</AppText> : null
       ) : (
         <View style={styles.meta}>
@@ -98,18 +99,67 @@ function CoachBubbleRow({ item }: { item: CoachBubble }) {
       )}
     </View>
   );
-}
+});
 
 function renderBubble({ item }: { item: CoachBubble }) {
   return <CoachBubbleRow item={item} />;
 }
 
+
+const CoachThread = memo(function CoachThread({ switching, switchLabel }: { switching: boolean; switchLabel: string }) {
+  const listRef = useRef<FlatList<CoachBubble>>(null);
+  const followEnd = useRef(true);
+  const messages = useCoachStore((s) => s.messages);
+  const busy = useCoachStore((s) => s.busy);
+  const status = useCoachStore((s) => s.status);
+  const lastMessage = messages[messages.length - 1];
+  const streaming = busy && lastMessage?.role === 'assistant' && lastMessage.text.length > 0;
+  useEffect(() => {
+    followEnd.current = true;
+  }, [messages.length]);
+  return (
+        <FlatList
+          ListEmptyComponent={
+            <View style={styles.emptyCard}>
+              <AppText variant="h4">Ask about your day, plans, and money</AppText>
+              <AppText style={styles.empty} variant="bodyRegular">
+                Your assistant reads tasks, travel, deliveries, bills, screenshots, and spends from this
+                phone. Replies stream as they are written. Pin a reply to keep a short summary on Home.
+              </AppText>
+            </View>
+          }
+          ListFooterComponent={!streaming && (busy || switching) ? <CoachTyping label={switching ? switchLabel : status} /> : null}
+          contentContainerStyle={styles.thread}
+          data={messages}
+          keyExtractor={keyExtractor}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          onContentSizeChange={() => {
+            if (followEnd.current) listRef.current?.scrollToEnd({ animated: false });
+          }}
+          onLayout={() => {
+            if (followEnd.current) listRef.current?.scrollToEnd({ animated: false });
+          }}
+          onScroll={({ nativeEvent: { contentOffset, contentSize, layoutMeasurement } }) => {
+            followEnd.current = contentSize.height - layoutMeasurement.height - contentOffset.y < 100;
+          }}
+          scrollEventThrottle={100}
+          initialNumToRender={12}
+          maxToRenderPerBatch={6}
+          windowSize={7}
+          ref={listRef}
+          renderItem={renderBubble}
+          style={styles.flex}
+        />
+  );
+});
+
 export function Coach() {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const keyboard = useKeyboardInset();
-  const listRef = useRef<FlatList<CoachBubble>>(null);
   const released = useRef(false);
+  const replyStopped = useRef(false);
   const leaveAction = useRef<{ type: string } | null>(null);
   const items = useTransactionStore((s) => s.financeItems);
   const events = useEventStore((s) => s.items);
@@ -118,9 +168,8 @@ export function Coach() {
   const subscriptions = useSubscriptionStore((s) => s.items);
   const salary = useBudgetStore((s) => s.salary);
   const expenses = useBudgetStore((s) => s.expenses);
-  const messages = useCoachStore((s) => s.messages);
+  const lastUser = useCoachStore((s) => lastUserQuestion(s.messages));
   const busy = useCoachStore((s) => s.busy);
-  const status = useCoachStore((s) => s.status);
   const append = useCoachStore((s) => s.append);
   const patch = useCoachStore((s) => s.patch);
   const setBusy = useCoachStore((s) => s.setBusy);
@@ -143,32 +192,38 @@ export function Coach() {
   const [switchLabel, setSwitchLabel] = useState('');
   const [dialog, setDialog] = useState<'leave' | 'new' | null>(null);
   const [leaving, setLeaving] = useState(false);
+  const [stopping, setStopping] = useState(false);
 
   const catalog = getCatalogModel(modelId);
-  const summary = summarizeMonth(items, salary, expenses);
-  const plan = buildSpendPlan(items, salary, expenses);
-  const lastUser = lastUserQuestion(messages);
-  const prompts = nextCoachPrompts(lastUser, plan);
+  const summary = useMemo(() => summarizeMonth(items, salary, expenses), [items, salary, expenses]);
+  const plan = useMemo(() => buildSpendPlan(items, salary, expenses), [items, salary, expenses]);
+  const prompts = useMemo(() => nextCoachPrompts(lastUser, plan), [lastUser, plan]);
   const blocked = busy || isProcessing || switching || leaving;
   const canSend = !blocked && draft.trim().length > 0;
-  const lastMessage = messages.length ? messages[messages.length - 1] : null;
-  const streaming = busy && lastMessage?.role === 'assistant' && lastMessage.text.length > 0;
   const composerPad = keyboard > 0 ? spacing.sm : bottomSafeInset(insets.bottom) + spacing.sm;
 
   useEffect(() => {
     released.current = false;
     useUiStore.getState().setModelInRam(getModelRamState().loaded);
-    void loadCoachSession(() => undefined)
+    const warmup = setTimeout(() => {
+      if (released.current) return;
+      void loadCoachSession((_progress, label) => {
+        if (!released.current && useCoachStore.getState().busy) {
+          useCoachStore.getState().setStatus(label);
+        }
+      })
       .catch(() => undefined)
       .finally(() => {
         useUiStore.getState().setModelInRam(getModelRamState().loaded);
       });
+    }, 300);
     return () => {
+      clearTimeout(warmup);
       if (released.current) {
         return;
       }
       interruptCoach();
-      void unloadCoachSession().finally(() => {
+      void unloadCoachSession().catch(() => undefined).finally(() => {
         useUiStore.getState().setModelInRam(getModelRamState().loaded);
       });
     };
@@ -195,15 +250,12 @@ export function Coach() {
     void send(question);
   }, [pendingAsk, busy, isProcessing, switching, leaving]);
 
-  useEffect(() => {
-    listRef.current?.scrollToEnd({ animated: true });
-  }, [messages.length, lastMessage?.text, busy]);
 
   function closeDialog() {
     setDialog(null);
   }
 
-  async function confirmLeave() {
+  function confirmLeave() {
     if (released.current) {
       return;
     }
@@ -213,12 +265,10 @@ export function Coach() {
     interruptCoach();
     startNewChat();
     setDraft('');
-    try {
-      await unloadCoachSession();
-    } catch {
-      // Still leave so a stuck unload cannot keep this session open.
-    }
-    useUiStore.getState().setModelInRam(getModelRamState().loaded);
+    // Release the session through the inference queue without blocking navigation.
+    void unloadCoachSession().catch(() => undefined).finally(() => {
+      useUiStore.getState().setModelInRam(getModelRamState().loaded);
+    });
     const action = leaveAction.current;
     leaveAction.current = null;
     if (action) {
@@ -307,10 +357,16 @@ export function Coach() {
     }
 
     const epoch = useCoachStore.getState().epoch;
-    append('user', question);
+    replyStopped.current = false;
+    setStopping(false);
+    const userId = append('user', question, true).id;
     setDraft('');
     setBusy(true);
-    setStatus('Looking at your plans…');
+    setStatus(getModelRamState().loaded ? 'Preparing response…' : `Loading ${catalog.label}…`);
+
+    // Let the pending bubble/loading indicator render before reading context.
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    if (useCoachStore.getState().epoch !== epoch) return;
 
     const openLife = coachOpenLife(life, lifeStates);
     const snapshot = coachSnapshot({
@@ -347,7 +403,7 @@ export function Coach() {
                 return;
               }
               if (!assistantId) {
-                assistantId = useCoachStore.getState().append('assistant', streamed).id;
+                assistantId = useCoachStore.getState().append('assistant', streamed, true).id;
                 setStatus('');
                 return;
               }
@@ -358,7 +414,9 @@ export function Coach() {
       if (useCoachStore.getState().epoch !== epoch) {
         return;
       }
-      const shown = coachDisplayedReply(reply, fallback, ready, availability.reason);
+      const shown = replyStopped.current && !reply.trim()
+        ? 'Response stopped.'
+        : coachDisplayedReply(reply, fallback, ready, availability.reason);
       if (!assistantId) {
         append('assistant', shown);
       } else if (!reply.trim()) {
@@ -371,7 +429,7 @@ export function Coach() {
         return;
       }
       const reason = error instanceof Error ? error.message : 'Could not run the on-device model.';
-      const text = coachDisplayedReply('', fallback, false, reason);
+      const text = replyStopped.current ? 'Response stopped.' : coachDisplayedReply('', fallback, false, reason);
       if (!assistantId) {
         append('assistant', text);
       } else {
@@ -379,6 +437,9 @@ export function Coach() {
       }
     } finally {
       if (useCoachStore.getState().epoch === epoch) {
+        useCoachStore.getState().finish(userId);
+        if (assistantId) useCoachStore.getState().finish(assistantId);
+        setStopping(false);
         setBusy(false);
         setStatus('');
       }
@@ -423,7 +484,7 @@ export function Coach() {
         </Pressable>
       </View>
 
-      <AppBottomSheet
+      {picking ? <AppBottomSheet
         accessibilityLabel="Close on-device models"
         onClose={() => {
           setPicking(false);
@@ -469,35 +530,12 @@ export function Coach() {
               </Pressable>
             );
           })}
-      </AppBottomSheet>
+      </AppBottomSheet> : null}
 
       <View style={[styles.flex, { paddingBottom: keyboard }]}>
-        <FlatList
-          ListEmptyComponent={
-            <View style={styles.emptyCard}>
-              <AppText variant="h4">Ask about your day, plans, and money</AppText>
-              <AppText style={styles.empty} variant="bodyRegular">
-                Your assistant reads tasks, travel, deliveries, bills, screenshots, and spends from this
-                phone. Replies stream as they are written. Pin a reply to keep a short summary on Home.
-              </AppText>
-            </View>
-          }
-          ListFooterComponent={!streaming && (busy || switching) ? <CoachTyping label={switchLabel || status} /> : null}
-          contentContainerStyle={styles.thread}
-          data={messages}
-          extraData={`${messages.length}:${lastMessage?.text ?? ''}:${busy}:${switching}`}
-          keyExtractor={keyExtractor}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
-          onContentSizeChange={() => {
-            listRef.current?.scrollToEnd({ animated: true });
-          }}
-          ref={listRef}
-          renderItem={renderBubble}
-          style={styles.flex}
-        />
+        <CoachThread switching={switching} switchLabel={switchLabel} />
 
-        <View style={styles.chips}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={styles.chipsViewport} contentContainerStyle={styles.chips}>
           {prompts.map((prompt) => (
             <Pressable
               accessibilityRole="button"
@@ -512,12 +550,12 @@ export function Coach() {
               </AppText>
             </Pressable>
           ))}
-        </View>
+        </ScrollView>
 
         <View style={[styles.composer, focused ? styles.composerOn : undefined, { marginBottom: composerPad }]}>
           <TextInput
             accessibilityLabel="Ask the assistant"
-            editable={!switching && !isProcessing}
+            editable={!switching && !isProcessing && !leaving}
             multiline
             onBlur={() => {
               setFocused(false);
@@ -533,17 +571,19 @@ export function Coach() {
           />
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={busy ? 'Stop writing' : 'Send message'}
-            disabled={!busy && !canSend}
+            accessibilityLabel={stopping ? 'Stopping response' : busy ? 'Stop writing' : 'Send message'}
+            disabled={stopping || (!busy && !canSend)}
             onPress={() => {
               if (busy) {
+                setStopping(true);
+                replyStopped.current = true;
                 interruptCoach();
                 return;
               }
               void send(draft);
             }}
             style={[styles.send, busy ? styles.sendStop : canSend ? styles.sendOn : styles.sendOff]}>
-            {busy ? (
+            {stopping ? <ActivityIndicator color={colors.neutral[0]} size="small" /> : busy ? (
               <Ionicons color={colors.neutral[0]} name="stop" size={16} />
             ) : switching ? (
               <ActivityIndicator color={colors.neutral[0]} size="small" />
@@ -696,9 +736,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  chipsViewport: {
+    flexGrow: 0,
+    flexShrink: 0,
+  },
   chips: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: spacing.sm,
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.sm,
@@ -735,7 +778,6 @@ const styles = StyleSheet.create({
   },
   composerOn: {
     borderColor: colors.primary[500],
-    borderWidth: 2,
   },
   input: {
     flex: 1,

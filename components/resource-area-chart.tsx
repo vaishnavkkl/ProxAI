@@ -1,3 +1,4 @@
+// @refresh reset
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
@@ -30,7 +31,7 @@ function sampleAt(samples: number[], index: number, columns: number): number {
 export function ResourceAreaChart({ samples, maxValue, label }: ResourceAreaChartProps) {
   const [width, setWidth] = useState(0);
   const ceiling = Math.max(maxValue, ...samples, 1);
-  const columns = width > 0 ? Math.min(COLS, Math.max(samples.length, 8)) : 0;
+  const columns = Math.min(COLS, Math.max(samples.length, 8));
 
   return (
     <View
@@ -55,6 +56,9 @@ export function ResourceAreaChart({ samples, maxValue, label }: ResourceAreaChar
         <View style={styles.idle} />
       )}
 
+      {samples.length === 1 ? (
+        <View style={[styles.stroke, { left: 0, right: 0, top: Math.min(CHART_H - 2, CHART_H * (1 - samples[0] / ceiling)) }]} />
+      ) : null}
       {width > 0 && samples.length > 1
         ? samples.slice(1).map((value, index) => {
             const prev = samples[index];
@@ -112,7 +116,7 @@ const styles = StyleSheet.create({
     top: CHART_H * 0.75,
   },
   area: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     flexDirection: 'row',
     alignItems: 'flex-end',
   },

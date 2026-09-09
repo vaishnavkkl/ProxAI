@@ -3,6 +3,7 @@ import { requireOptionalNativeModule } from 'expo';
 import type { NativeCalendarRow, NativeImageFolder, NativeInboxRow, NativeMemorySnapshot, NativeScreenshot } from '@/modules/finlife-native';
 
 type FinlifeNativeModule = {
+  cancelModelDownloads?: () => Promise<number>;
   getMemorySnapshot: () => Promise<NativeMemorySnapshot>;
   releaseAppMemory?: () => Promise<NativeMemorySnapshot>;
   getTodaysInbox: () => Promise<NativeInboxRow[]>;
@@ -22,6 +23,7 @@ type FinlifeNativeModule = {
   getScreenshotPage?: (since: number, until: number, afterId: number, folders?: string[]) => Promise<NativeScreenshot[]>;
   getScreenshotHash?: (uri: string) => Promise<string>;
   recognizeScreenshot?: (uri: string) => Promise<string>;
+  recognizeMalayalamScreenshot?: (uri: string) => Promise<string>;
 };
 
 export function getFinlifeNative(): FinlifeNativeModule | null {

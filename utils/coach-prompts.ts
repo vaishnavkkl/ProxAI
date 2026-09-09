@@ -19,6 +19,14 @@ export type CoachTopic =
 
 export function detectCoachTopic(text: string): CoachTopic {
   const question = text.toLowerCase();
+  // Match Malayalam topics before clipping the snapshot, so long finance rows
+  // cannot hide the user's tasks or travel when they ask in Malayalam.
+  if (/ഇന്നത്തെ (പരിപാടി|പദ്ധതി|കാര്യ)|ഇന്ന് എന്തൊക്കെ|അജണ്ട/.test(question)) return 'today';
+  if (/ചെയ്യേണ്ട|ചെയ്യാനുള്ള|ടാസ്ക്/.test(question)) return 'tasks';
+  if (/യാത്ര|ട്രെയിൻ|വിമാനം|ടിക്കറ്റ്|ഹോട്ടൽ/.test(question)) return 'travel';
+  if (/പാർസൽ|ഡെലിവറി|കൊറിയർ/.test(question)) return 'delivery';
+  if (/തട്ടിപ്പ്|സുരക്ഷ|ഫിഷിംഗ്/.test(question)) return 'security';
+  if (/ബില്ല്|ബിൽ|വാടക|സബ്സ്ക്രിപ്ഷൻ/.test(question)) return 'bills';
   if (/\b(agenda|what('s| is) on|my day|today('s)? (plan|task|event|list))\b/.test(question)) {
     return 'today';
   }
@@ -181,4 +189,41 @@ export function clipCoachSnapshot(text: string, max = 1400) {
     return text;
   }
   return `${text.slice(0, max).trim()}\n[truncated]`;
+}
+
+/** Keep task/travel facts from being crowded out by long transaction lists. */
+export function selectCoachSnapshot(text: string, question: string, max = 1400): string {
+  const topic = detectCoachTopic(question);
+  const sectionPatterns: Partial<Record<CoachTopic, RegExp>> = {
+    today: /^(Upcoming events|Tasks|Travel|Deliveries|Due bills|Other plans):/i,
+    tasks: /^(Tasks|Other plans):/i,
+    travel: /^(Travel|Upcoming events):/i,
+    delivery: /^Deliveries:/i,
+    security: /^Security to review:/i,
+    bills: /^(Due bills|Bills|Fixed bills|Subscriptions|Paycheck|Left after bills and spends):/i,
+  };
+  const pattern = sectionPatterns[topic];
+  if (!pattern) return clipCoachSnapshot(text, max);
+  const lines = text.split('\n');
+  const relevant = lines.filter((line) => pattern.test(line));
+  const context = lines.filter((line) => /^(Month|Today):/i.test(line));
+  if (relevant.length === 0) {
+    return [...context, 'No saved details for this topic in the current snapshot.'].join('\n');
+  }
+  // Share the budget between relevant sections so one long line cannot hide
+  // every other type of plan. Leave room for labels and truncation indicators.
+  const available = Math.max(0, max - context.join('\n').length - context.length);
+  const perLine = Math.max(1, Math.floor(available / relevant.length) - 1);
+  return [...context, ...relevant.map((line) => line.length <= perLine
+    ? line : clipCoachSnapshot(line, Math.max(0, perLine - 13)))].join('\n');
+}
+
+/** Conservative input byte allowance plus the 256-token reply and framing. */
+export function coachContextReserve(input: string): number {
+  let bytes = 0;
+  for (const char of input) {
+    const code = char.codePointAt(0)!;
+    bytes += code <= 0x7f ? 1 : code <= 0x7ff ? 2 : code <= 0xffff ? 3 : 4;
+  }
+  return Math.max(512, bytes + 320);
 }

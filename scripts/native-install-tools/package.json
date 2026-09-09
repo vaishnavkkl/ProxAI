@@ -1,0 +1,8 @@
+{
+  "name": "@proxai/native-install-tools",
+  "version": "1.0.0",
+  "private": true,
+  "bin": {
+    "sha256sum": "sha256sum.cjs"
+  }
+}

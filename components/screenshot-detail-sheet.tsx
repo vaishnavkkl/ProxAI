@@ -1,6 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Image } from 'expo-image';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { AppBottomSheet } from '@/components/app-bottom-sheet';
@@ -37,11 +37,13 @@ export function ScreenshotDetailSheet({ scan, onClose }: ScreenshotDetailSheetPr
     ? new Date(scan.capturedAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })
     : '';
 
-  useEffect(() => {
+  const [wasVisible, setWasVisible] = useState(scan != null);
+  if (wasVisible !== (scan != null)) {
+    setWasVisible(scan != null);
     if (!scan) {
       setAsking(false);
     }
-  }, [scan]);
+  }
 
   function close() {
     setAsking(false);

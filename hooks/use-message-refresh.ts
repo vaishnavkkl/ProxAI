@@ -3,24 +3,10 @@ import { type Href, useRouter } from 'expo-router';
 
 import { listMailAccounts, requestCalendarAccess } from '@/services/device-calendar';
 import { processRefreshMessages } from '@/services/llm-service';
-import { readHeapBytes, readMemory } from '@/services/memory-monitor';
 import { useSettingsStore } from '@/store/settings-store';
 import { useUiStore } from '@/store/ui-store';
 
 let pendingMailPick: ((account: string | null) => void) | null = null;
-
-function publishMemory(reading: Awaited<ReturnType<typeof readMemory>>) {
-  const toMb = (bytes: number) => bytes / (1024 * 1024);
-  useUiStore.getState().setMemory({
-    usedMb: toMb(reading.usedBytes),
-    availMb: toMb(reading.availBytes),
-    totalMb: toMb(reading.totalBytes),
-    modelMb: toMb(reading.modelBytes),
-    diskMb: toMb(reading.diskBytes),
-    deviceUsedMb: toMb(reading.deviceUsedBytes),
-    deviceTotalMb: toMb(reading.deviceTotalBytes),
-  });
-}
 
 export function useMessageRefresh() {
   const router = useRouter();
@@ -81,21 +67,8 @@ export function useMessageRefresh() {
     setWorkKind('scan');
     setProgress(0.02, 'Scanning this phone…');
     setToast({ kind: 'info', message: 'Scanning SMS, Calendar, and subscription apps…' });
-    useUiStore.getState().clearMemory();
 
-    let timer: ReturnType<typeof setInterval> | undefined;
     try {
-      try {
-        const baselineHeap = await readHeapBytes();
-        const first = await readMemory(baselineHeap);
-        publishMemory(first);
-        timer = setInterval(() => {
-          void readMemory(baselineHeap).then(publishMemory);
-        }, 250);
-      } catch {
-        // Memory readout is optional. The scan still runs.
-      }
-
       const result = await processRefreshMessages((progress, label) => {
         setProgress(progress, label);
       }, { skipMail: skipMailScan });
@@ -141,9 +114,6 @@ export function useMessageRefresh() {
         message: 'Scan stopped early. Anything already found is saved. Tap Refresh to continue.',
       });
     } finally {
-      if (timer) {
-        clearInterval(timer);
-      }
       setProcessing(false);
       setProgress(0, '');
     }

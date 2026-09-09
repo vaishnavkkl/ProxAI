@@ -6,9 +6,8 @@ const CHANNEL = 'downloads';
 const NOTICE_ID = 'proxai_model_download';
 
 let lastAt = 0;
-let lastLabel = '';
-let lastPercent = -1;
 let ready = false;
+let noticeVersion = 0;
 
 async function ensureChannel() {
   if (ready || process.env.EXPO_OS === 'web') {
@@ -35,16 +34,17 @@ export async function reportDownloadNotice(progress: number, label: string) {
     return;
   }
   const percent = Math.max(0, Math.min(100, Math.round(progress * 100)));
+  const version = noticeVersion;
   const now = Date.now();
-  if (percent < 100 && now - lastAt < 400 && lastLabel === label && lastPercent === percent) {
+  // A changing byte label must not bypass the native notification rate limit.
+  if (now - lastAt < 1000) {
     return;
   }
   lastAt = now;
-  lastLabel = label;
-  lastPercent = percent;
   if (!(await ensureChannel())) {
     return;
   }
+  if (version !== noticeVersion) return;
   await Notifications.scheduleNotificationAsync({
     identifier: NOTICE_ID,
     content: {
@@ -60,9 +60,8 @@ export async function reportDownloadNotice(progress: number, label: string) {
 }
 
 export async function finishDownloadNotice(ok: boolean, message: string) {
+  noticeVersion += 1;
   lastAt = 0;
-  lastLabel = '';
-  lastPercent = -1;
   if (process.env.EXPO_OS === 'web') {
     return;
   }

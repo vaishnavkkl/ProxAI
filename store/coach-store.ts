@@ -8,6 +8,7 @@ export type CoachBubble = {
   role: 'user' | 'assistant';
   text: string;
   at: number;
+  pending?: boolean;
 };
 
 type CoachState = {
@@ -17,7 +18,8 @@ type CoachState = {
   status: string;
   pendingAsk: string | null;
   epoch: number;
-  append: (role: CoachBubble['role'], text: string) => CoachBubble;
+  append: (role: CoachBubble['role'], text: string, pending?: boolean) => CoachBubble;
+  finish: (id: string) => void;
   patch: (id: string, text: string) => void;
   setBusy: (busy: boolean) => void;
   setStatus: (status: string) => void;
@@ -39,8 +41,8 @@ export const useCoachStore = create<CoachState>((set, get) => ({
   status: '',
   pendingAsk: null,
   epoch: 0,
-  append: (role, text) => {
-    const bubble: CoachBubble = { id: `coach-${nextId}`, role, text, at: Date.now() };
+  append: (role, text, pending = false) => {
+    const bubble: CoachBubble = { id: `coach-${nextId}`, role, text, at: Date.now(), pending };
     nextId += 1;
     set((state) => ({ messages: [...state.messages, bubble] }));
     return bubble;
@@ -50,6 +52,11 @@ export const useCoachStore = create<CoachState>((set, get) => ({
       messages: state.messages.map((item) => (item.id === id ? { ...item, text } : item)),
     }));
   },
+  finish: (id) => set((state) => ({
+    messages: state.messages.map((item) => item.id === id && item.pending
+      ? { ...item, pending: false, at: item.role === 'assistant' ? Date.now() : item.at }
+      : item),
+  })),
   setBusy: (busy) => set({ busy, status: busy ? 'Reading your ledger…' : '' }),
   setStatus: (status) => set({ status }),
   setPendingAsk: (pendingAsk) => set({ pendingAsk }),

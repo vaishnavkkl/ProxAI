@@ -5,6 +5,7 @@ import { FlatList, Linking, Pressable, StyleSheet, Switch, View } from 'react-na
 import { AppBottomSheet } from '@/components/app-bottom-sheet';
 import { AppText } from '@/components/app-text';
 import { OcrCaptureSheet } from '@/components/ocr-capture-sheet';
+import { OcrLanguagePicker } from '@/components/ocr-language-picker';
 import { ProgressMeter } from '@/components/progress-meter';
 import { ScreenBack } from '@/components/screen-back';
 import { ScreenScaffold } from '@/components/screen-scaffold';
@@ -245,6 +246,7 @@ export function Screenshots() {
               <Ionicons color={colors.primary[600]} name="folder-open-outline" size={22} />
             </Pressable>
             <View style={styles.card}>
+              <OcrLanguagePicker />
               <AppText variant="labelRegular">Read one photo</AppText>
               <Pressable
                 accessibilityRole="button"

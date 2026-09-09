@@ -80,14 +80,10 @@ export function findCachedFile(remoteUrl: string): string | null {
       if (!directory.exists) {
         continue;
       }
-      for (const entry of directory.list()) {
-        if (!(entry instanceof File)) {
-          continue;
-        }
-        // tokenizer.json is shared as a basename by unrelated models. Match the full URL key.
-        if (entry.name === expected && entry.size > 0) {
-          return toFileUri(entry.uri);
-        }
+      // Check the exact URL-keyed file instead of enumerating the whole cache.
+      const entry = new File(directory, expected);
+      if (entry.exists && entry.size > 0) {
+        return toFileUri(entry.uri);
       }
     }
   } catch {

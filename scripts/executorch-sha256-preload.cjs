@@ -34,10 +34,10 @@ childProcess.execSync = function patchedExecSync(command, options) {
   if (cmd.startsWith('tar -xzmf ')) {
     const match = cmd.match(/^tar -xzmf "(.+)" -C "(.+)"$/);
     if (match) {
-      const tarball = toUnixPath(match[1]);
-      const destDir = toUnixPath(match[2]);
+      const tarball = process.platform === 'win32' ? match[1] : toUnixPath(match[1]);
+      const destDir = process.platform === 'win32' ? match[2] : toUnixPath(match[2]);
       fs.mkdirSync(destDir, { recursive: true });
-      return originalExecSync(`tar -xzmf "${tarball}" -C "${destDir}"`, options);
+      return childProcess.execFileSync('tar', ['-xzmf', tarball, '-C', destDir], options);
     }
   }
 

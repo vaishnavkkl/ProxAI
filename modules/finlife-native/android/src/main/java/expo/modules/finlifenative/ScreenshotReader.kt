@@ -10,6 +10,7 @@ import com.google.android.gms.tasks.Tasks
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import com.googlecode.tesseract.android.TessBaseAPI
 import java.io.File
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
@@ -114,7 +115,8 @@ internal object ScreenshotReader {
     return digest.digest().joinToString("") { "%02x".format(it) }
   }
 
-  fun recognize(context: Context, value: String): String {
+  @Synchronized
+  fun recognize(context: Context, value: String, malayalam: Boolean = false): String {
     val uri = localUri(context, value)
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     context.contentResolver.openInputStream(uri)!!.use { BitmapFactory.decodeStream(it, null, bounds) }
@@ -123,13 +125,51 @@ internal object ScreenshotReader {
     while (maxOf(bounds.outWidth, bounds.outHeight) / options.inSampleSize > 4096) options.inSampleSize *= 2
     val bitmap = context.contentResolver.openInputStream(uri)!!.use { BitmapFactory.decodeStream(it, null, options) }
       ?: throw IllegalArgumentException("Image cannot be decoded")
-    val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
     try {
-      val result = Tasks.await(recognizer.process(InputImage.fromBitmap(bitmap, 0)), 30, TimeUnit.SECONDS)
-      return result.text
+      if (malayalam) {
+        val dataRoot = prepareMalayalamData(context)
+        val recognizer = TessBaseAPI()
+        try {
+          check(recognizer.init(dataRoot.absolutePath, "mal+eng", TessBaseAPI.OEM_LSTM_ONLY)) {
+            "Could not initialize offline Malayalam OCR. Reinstall the updated Android build."
+          }
+          recognizer.setPageSegMode(TessBaseAPI.PageSegMode.PSM_AUTO)
+          recognizer.setImage(bitmap)
+          return recognizer.getUTF8Text().orEmpty().trim()
+        } finally {
+          recognizer.recycle()
+        }
+      }
+      val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+      try {
+        return Tasks.await(recognizer.process(InputImage.fromBitmap(bitmap, 0)), 30, TimeUnit.SECONDS).text
+      } finally {
+        recognizer.close()
+      }
     } finally {
-      recognizer.close()
       bitmap.recycle()
     }
+  }
+
+  // Bundled files: no network or extra permissions. Version the directory when data changes.
+  // Called under recognize's lock; atomic copies also recover from interrupted first use.
+  private fun prepareMalayalamData(context: Context): File {
+    val root = File(context.noBackupFilesDir, "ocr-fast-87416418")
+    val data = File(root, "tessdata")
+    check(data.isDirectory || data.mkdirs()) { "Could not create offline OCR directory" }
+    for (language in listOf("mal", "eng")) {
+      val target = File(data, "$language.traineddata")
+      if (target.isFile && target.length() > 0) continue
+      val pending = File(data, "$language.traineddata.tmp")
+      try {
+        context.assets.open("tessdata/$language.traineddata").use { input ->
+          pending.outputStream().use { output -> input.copyTo(output) }
+        }
+        check(pending.renameTo(target)) { "Could not install offline OCR language" }
+      } finally {
+        pending.delete()
+      }
+    }
+    return root
   }
 }

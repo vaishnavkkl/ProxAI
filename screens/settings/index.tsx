@@ -9,6 +9,10 @@ import { AppDialog, type DialogAction } from '@/components/app-dialog';
 import { AppText } from '@/components/app-text';
 import { ImageModelPicker } from '@/components/image-model-picker';
 import { ModelPicker } from '@/components/model-picker';
+import { OcrLanguagePicker } from '@/components/ocr-language-picker';
+import { ModelDownloadCard } from '@/components/model-download-card';
+import { useModelDownloadStore } from '@/store/model-download-store';
+import { stopAllModelDownloads } from '@/services/model-download';
 import { ScheduleEditor } from '@/components/schedule-editor';
 import { ScreenScaffold } from '@/components/screen-scaffold';
 import { ScanLookback } from '@/components/scan-lookback';
@@ -72,7 +76,7 @@ export function Settings() {
   const setToast = useUiStore((s) => s.setToast);
   const modelInRam = useUiStore((s) => s.modelInRam);
   const imageInRam = useUiStore((s) => s.imageInRam);
-  const downloading = useUiStore((s) => s.workKind === 'download' && s.isProcessing);
+  const downloading = useModelDownloadStore((s) => s.kind != null);
   const processing = useUiStore((s) => s.isProcessing);
 
   const [modelStatus, setModelStatus] = useState('Checking on-device model…');
@@ -119,12 +123,11 @@ export function Settings() {
     void getModelAvailability().then((availability) => {
       if (active) {
         setModelStatus(availability.reason);
+        const storage = getModelStorageInfo();
+        setModelPath(storage.path);
+        setModelDisk(storageLine());
       }
     });
-
-    const storage = getModelStorageInfo();
-    setModelPath(storage.path);
-    setModelDisk(storageLine());
 
     void getDeviceSpecs().then((specs: DeviceSpecs) => {
       if (!active) {
@@ -153,7 +156,7 @@ export function Settings() {
   }, [modelId, customModelUrl, customTokenizerUrl, customTokenizerConfigUrl]);
 
   function confirmClearDatabase() {
-    if (useUiStore.getState().isProcessing) { setToast({ kind: 'info', message: 'Wait for the current scan before clearing data.' }); return; }
+    if (useUiStore.getState().isProcessing || useModelDownloadStore.getState().kind) { setToast({ kind: 'info', message: 'Wait for the scan or download before clearing data.' }); return; }
     setDialog({
       title: 'Clear local database?',
       message: 'For testing. Scanned messages can be read again on Refresh. Model files and Settings stay.',
@@ -182,7 +185,7 @@ export function Settings() {
   }
 
   function confirmClearDownloads() {
-    if (useUiStore.getState().isProcessing) { setToast({ kind: 'info', message: 'Wait for the current scan before clearing models.' }); return; }
+    if (useUiStore.getState().isProcessing || useModelDownloadStore.getState().kind) { setToast({ kind: 'info', message: 'Wait for the scan or download before clearing models.' }); return; }
     setDialog({
       title: 'Remove downloaded models?',
       message: 'Deletes language-model and image-model files on this phone to free storage. RAM occupancy is unloaded first.',
@@ -221,14 +224,7 @@ export function Settings() {
       setToast({ kind: 'info', message: 'Wait for the current scan to finish.' });
       return;
     }
-    setShowModels(false);
-    useUiStore.getState().setWorkKind('download');
-    useUiStore.getState().setProcessing(true);
-    useUiStore.getState().setProgress(0.02, 'Starting download…');
-    router.push('/processing' as Href);
-    void downloadSelectedModel((progress, label) => {
-      useUiStore.getState().setProgress(progress, label);
-    })
+    void downloadSelectedModel(() => undefined)
       .then(() => {
         refreshStatus();
         setToast({
@@ -236,15 +232,12 @@ export function Settings() {
           message: 'Model is on this phone. Refresh will not use the internet.',
         });
       })
-      .catch(() => {
+      .catch((error) => {
         setToast({
-          kind: 'error',
-          message: 'Download failed. Check internet and try again.',
+          kind: error instanceof Error && error.message === 'stopped' ? 'info' : 'error',
+          message: error instanceof Error && error.message === 'stopped'
+            ? 'Model download stopped.' : 'Download failed. Check internet and try again.',
         });
-      })
-      .finally(() => {
-        useUiStore.getState().setProcessing(false);
-        useUiStore.getState().setProgress(0, '');
       });
   }
 
@@ -257,14 +250,7 @@ export function Settings() {
       setToast({ kind: 'error', message: 'Needs the Android development build. Expo Go cannot download this model.' });
       return;
     }
-    setShowImages(false);
-    useUiStore.getState().setWorkKind('download');
-    useUiStore.getState().setProcessing(true);
-    useUiStore.getState().setProgress(0.02, 'Starting download…');
-    router.push('/processing' as Href);
-    void downloadTextToImage(ttiVariantId, (progress, label) => {
-      useUiStore.getState().setProgress(progress, label);
-    })
+    void downloadTextToImage(ttiVariantId, () => undefined)
       .then(() => {
         refreshStatus();
         setToast({
@@ -278,16 +264,13 @@ export function Settings() {
           kind: message === 'stopped' ? 'info' : 'error',
           message: message === 'stopped' ? 'Image model download stopped.' : message === 'unavailable' ? 'Needs the Android development build.' : 'Download failed. Check internet and try again.',
         });
-      })
-      .finally(() => {
-        useUiStore.getState().setProcessing(false);
-        useUiStore.getState().setProgress(0, '');
       });
   }
 
   return (
     <ScreenScaffold>
       <SectionHero title="Make it yours" subtitle="Your preferences, privacy and connected sources" icon="options-outline" />
+      {!showModels && !showImages ? <ModelDownloadCard /> : null}
 
       <View style={styles.list}>
         <SettingsRow icon="earth-outline" title="Event region" value="Kerala & India. Regional holidays are filtered; your personal bookings and appointments stay visible." />
@@ -360,6 +343,8 @@ export function Settings() {
           }
         />
 
+        <OcrLanguagePicker />
+
         <ScanLookback
           onChange={(months) => {
             const wider = months > scanLookbackMonths;
@@ -410,6 +395,7 @@ export function Settings() {
           }}
           title="Language models"
           visible={showModels}>
+          <ModelDownloadCard />
           <ModelPicker />
         </AppBottomSheet>
 
@@ -503,6 +489,20 @@ export function Settings() {
         <SettingsRow
           icon="folder-open-outline" title="Download folder"
           value={modelPath}
+        />
+
+        <SettingsRow
+          action="Stop"
+          icon="stop-circle-outline"
+          title="Stop all model downloads"
+          value="Stops active and leftover Android model transfers. Completed models stay on this phone."
+          onPress={() => {
+            void stopAllModelDownloads().then((count) => {
+              setToast({ kind: 'info', message: count ? `Stopped ${count} background model transfer(s).` : 'No background model transfers remain.' });
+            }).catch((error) => {
+              setToast({ kind: 'error', message: error instanceof Error ? error.message : 'Could not stop background downloads.' });
+            });
+          }}
         />
 
         <SettingsRow

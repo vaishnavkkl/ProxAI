@@ -1,5 +1,5 @@
 import { Image } from 'expo-image';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { StyleSheet } from 'react-native';
 
 import { AppBottomSheet } from '@/components/app-bottom-sheet';
@@ -18,11 +18,13 @@ type OcrCaptureSheetProps = {
 export function OcrCaptureSheet({ visible, uri, text, onClose, onAsk }: OcrCaptureSheetProps) {
   const [asking, setAsking] = useState(false);
 
-  useEffect(() => {
+  const [wasVisible, setWasVisible] = useState(visible);
+  if (wasVisible !== visible) {
+    setWasVisible(visible);
     if (!visible) {
       setAsking(false);
     }
-  }, [visible]);
+  }
 
   return (
     <AppBottomSheet

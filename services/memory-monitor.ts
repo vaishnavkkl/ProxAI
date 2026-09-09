@@ -32,13 +32,16 @@ async function appMaxBytes(): Promise<number> {
   }
 }
 
-export async function readMemory(baselineHeapBytes = 0): Promise<MemoryReading> {
-  const diskBytes = getModelStorageInfo().totalBytes;
+export async function readMemory(
+  baselineHeapBytes = 0,
+  cached?: { diskBytes: number; appMaxBytes: number },
+): Promise<MemoryReading> {
+  const diskBytes = cached?.diskBytes ?? getModelStorageInfo().totalBytes;
   const native = getFinlifeNative();
   const snapshot = native ? await native.getMemorySnapshot() : null;
   const javaUsed = snapshot?.javaUsedBytes ?? 0;
   const nativeUsed = snapshot?.nativeHeapBytes ?? 0;
-  const appMax = await appMaxBytes();
+  const appMax = cached?.appMaxBytes ?? await appMaxBytes();
   const appUsed = clamp(javaUsed, appMax || javaUsed);
   const appTotal = appMax > 0 ? appMax : Math.max(appUsed, 1);
   const modelRaw = Math.max(0, javaUsed + nativeUsed - baselineHeapBytes);

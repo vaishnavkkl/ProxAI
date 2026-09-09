@@ -84,7 +84,7 @@ function toMailItem(id: string, title: string, notes: string, startAt: string): 
 
 function calendarModule() {
   try {
-    return require('expo-calendar') as typeof import('expo-calendar');
+    return require('expo-calendar/legacy') as typeof import('expo-calendar/legacy');
   } catch {
     return null;
   }

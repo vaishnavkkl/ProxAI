@@ -2,6 +2,7 @@ import { getScanMeta, setScanMeta } from '@/services/database';
 import { DEFAULT_MODEL_ID, isModelId, type ModelId } from '@/services/model-catalog';
 import { DEFAULT_WINDOWS, parseWindows, type ScheduleWindow } from '@/services/llm-schedule';
 import { DEFAULT_TTI_VARIANT, isTtiVariantId, type TtiVariantId } from '@/services/text-to-image-catalog';
+import type { OcrLanguage } from '@/services/screenshot-ocr';
 
 export type ScanLookbackMonths = 1 | 2 | 3 | 6;
 
@@ -17,6 +18,7 @@ export type AppSettings = {
   googleAccount: string;
   remindersOn: boolean;
   ttiVariantId: TtiVariantId;
+  ocrLanguage: OcrLanguage;
 };
 
 const KEYS = {
@@ -31,6 +33,7 @@ const KEYS = {
   googleAccount: 'google_account',
   reminders: 'reminders_on',
   ttiVariant: 'tti_variant_id',
+  ocrLanguage: 'ocr_language',
 } as const;
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -45,6 +48,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   googleAccount: '',
   remindersOn: true,
   ttiVariantId: DEFAULT_TTI_VARIANT,
+  ocrLanguage: 'en',
 };
 
 function asFlag(value: string | null, fallback: boolean): boolean {
@@ -67,6 +71,7 @@ export async function loadAppSettings(): Promise<AppSettings> {
     googleAccount,
     reminders,
     ttiVariant,
+    ocrLanguage,
   ] = await Promise.all([
     getScanMeta(KEYS.offline),
     getScanMeta(KEYS.privacy),
@@ -79,6 +84,7 @@ export async function loadAppSettings(): Promise<AppSettings> {
     getScanMeta(KEYS.googleAccount),
     getScanMeta(KEYS.reminders),
     getScanMeta(KEYS.ttiVariant),
+    getScanMeta(KEYS.ocrLanguage),
   ]);
 
   const lookbackMonths = Number(lookback);
@@ -97,11 +103,15 @@ export async function loadAppSettings(): Promise<AppSettings> {
     googleAccount: googleAccount ?? '',
     remindersOn: asFlag(reminders, true),
     ttiVariantId: ttiVariant && isTtiVariantId(ttiVariant) ? ttiVariant : DEFAULT_TTI_VARIANT,
+    ocrLanguage: ocrLanguage === 'ml' ? 'ml' : 'en',
   };
 }
 
 export async function persistSetting<K extends keyof AppSettings>(key: K, value: AppSettings[K]) {
   switch (key) {
+    case 'ocrLanguage':
+      await setScanMeta(KEYS.ocrLanguage, String(value));
+      return;
     case 'offlineMode':
       await setScanMeta(KEYS.offline, value ? '1' : '0');
       return;

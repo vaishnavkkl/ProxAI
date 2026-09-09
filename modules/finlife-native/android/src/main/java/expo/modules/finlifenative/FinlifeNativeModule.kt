@@ -21,8 +21,21 @@ import java.util.Calendar
 import kotlin.math.max
 
 class FinlifeNativeModule : Module() {
+  private var downloadContext: Context? = null
+
   override fun definition() = ModuleDefinition {
     Name("FinlifeNative")
+
+    AsyncFunction("cancelModelDownloads") {
+      val context = appContextOrThrow().applicationContext
+      downloadContext = context
+      ModelDownloadCleanup.cancel(context)
+    }
+
+    OnDestroy {
+      // A JS reload must not leave Android transferring files after its UI disappears.
+      downloadContext?.let { context -> runCatching { ModelDownloadCleanup.cancel(context) } }
+    }
 
     AsyncFunction("getMemorySnapshot") {
       memorySnapshot()
@@ -103,6 +116,10 @@ class FinlifeNativeModule : Module() {
 
     AsyncFunction("recognizeScreenshot") { uri: String ->
       ScreenshotReader.recognize(appContextOrThrow(), uri)
+    }
+
+    AsyncFunction("recognizeMalayalamScreenshot") { uri: String ->
+      ScreenshotReader.recognize(appContextOrThrow(), uri, malayalam = true)
     }
   }
 

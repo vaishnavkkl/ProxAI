@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 
 export type ToastKind = 'info' | 'success' | 'error';
-export type WorkKind = 'idle' | 'scan' | 'download';
+export type WorkKind = 'idle' | 'scan';
 
 export type Toast = {
   kind: ToastKind;

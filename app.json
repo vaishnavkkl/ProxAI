@@ -7,7 +7,6 @@
     "icon": "./assets/images/icon.png",
     "scheme": "proxai",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
@@ -32,9 +31,7 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "largeHeap": true,
       "package": "com.yshnav.ProxAI",
       "softwareKeyboardLayoutMode": "pan"
     },
@@ -78,7 +75,8 @@
           "cameraPermission": "ProxAI takes a photo to read text on this phone. Nothing is uploaded.",
           "microphonePermission": false
         }
-      ]
+      ],
+      "./plugins/with-large-heap.cjs"
     ],
     "experiments": {
       "typedRoutes": true,

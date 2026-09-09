@@ -3,6 +3,8 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/app-text';
+import { ModelDownloadCard } from '@/components/model-download-card';
+import { useModelDownloadStore } from '@/store/model-download-store';
 import { hasCachedTextToImage, removeCachedTextToImage } from '@/services/text-to-image';
 import { TTI_MODEL_NAME, TTI_VARIANTS, type TtiVariantId, ttiVariantSupported } from '@/services/text-to-image-catalog';
 import { useSettingsStore } from '@/store/settings-store';
@@ -17,6 +19,7 @@ type ImageModelPickerProps = {
 export function ImageModelPicker({ onDiskChange }: ImageModelPickerProps) {
   const router = useRouter();
   const processing = useUiStore((s) => s.isProcessing);
+  const downloading = useModelDownloadStore((s) => s.kind === 'image');
   const ttiVariantId = useSettingsStore((s) => s.ttiVariantId);
   const setTtiVariantId = useSettingsStore((s) => s.setTtiVariantId);
   const setToast = useUiStore((s) => s.setToast);
@@ -28,7 +31,7 @@ export function ImageModelPicker({ onDiskChange }: ImageModelPickerProps) {
   }
 
   function selectModel(id: TtiVariantId) {
-    if (processing) {
+    if (processing || downloading) {
       return;
     }
     if (!ttiVariantSupported(id)) {
@@ -40,7 +43,7 @@ export function ImageModelPicker({ onDiskChange }: ImageModelPickerProps) {
   }
 
   function removeModel(id: TtiVariantId) {
-    if (processing) {
+    if (processing || downloading) {
       return;
     }
     void removeCachedTextToImage(id).then((removed) => {
@@ -54,9 +57,10 @@ export function ImageModelPicker({ onDiskChange }: ImageModelPickerProps) {
 
   return (
     <View style={styles.block}>
+      <ModelDownloadCard />
       <AppText variant="h4">Image models</AppText>
       <AppText variant="bodySmall">
-        {TTI_MODEL_NAME} draws 512×512 on this phone. It is not an LLM. Chat unloads first. Select a
+        {TTI_MODEL_NAME} draws 512×512 on this phone. Downloading keeps chat available; generating an image uses the model slot. Select a
         backend, then tap Download in the header. Remove a download to free storage.
       </AppText>
       {TTI_VARIANTS.map((item) => {
@@ -67,8 +71,8 @@ export function ImageModelPicker({ onDiskChange }: ImageModelPickerProps) {
           <View key={`${item.id}-${diskTick}`} style={[styles.card, active ? styles.cardActive : undefined, !supported ? styles.cardOff : undefined]}>
             <Pressable
               accessibilityRole="button"
-              accessibilityState={{ selected: active, disabled: processing || !supported }}
-              disabled={processing}
+              accessibilityState={{ selected: active, disabled: processing || downloading || !supported }}
+              disabled={processing || downloading || !supported}
               onPress={() => {
                 selectModel(item.id);
               }}>
@@ -92,7 +96,7 @@ export function ImageModelPicker({ onDiskChange }: ImageModelPickerProps) {
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={`Remove ${item.label} from this phone`}
-                disabled={processing}
+                disabled={processing || downloading}
                 onPress={() => {
                   removeModel(item.id);
                 }}

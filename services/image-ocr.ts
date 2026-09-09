@@ -1,6 +1,6 @@
 import * as ImagePicker from 'expo-image-picker';
 
-import { getFinlifeNative } from '@/services/finlife-native';
+import { recognizeImageText } from '@/services/screenshot-ocr';
 
 export async function pickImageUri(source: 'gallery' | 'camera'): Promise<string | null> {
   if (source === 'camera') {
@@ -33,9 +33,5 @@ export async function pickImageUri(source: 'gallery' | 'camera'): Promise<string
 }
 
 export async function recognizePickedImage(uri: string): Promise<string> {
-  const native = getFinlifeNative();
-  if (!native?.recognizeScreenshot) {
-    throw new Error('Image OCR needs the updated Android development build.');
-  }
-  return native.recognizeScreenshot(uri);
+  return recognizeImageText(uri);
 }
