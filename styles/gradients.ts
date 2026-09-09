@@ -22,4 +22,5 @@ export const gradients = {
   statIn: 'linear-gradient(160deg, #059669 0%, #047857 46%, #064E3B 100%)',
   statOut: 'linear-gradient(160deg, #EA580C 0%, #9A3412 46%, #431407 100%)',
   statNet: `linear-gradient(160deg, ${colors.primary[800]} 0%, #1E293B 52%, ${colors.primary[950]} 100%)`,
+  action: `linear-gradient(145deg, ${colors.primary[500]} 0%, ${colors.primary[700]} 48%, ${colors.primary[800]} 100%), linear-gradient(145deg, rgba(255,255,255,0.22) 0%, rgba(255,255,255,0.04) 42%)`,
 } as const;

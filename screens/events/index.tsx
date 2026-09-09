@@ -30,7 +30,7 @@ export function Events() {
   async function refreshCalendar() {
     if (importing) return;
     setImporting(true);
-    try { const count = await importDeviceCalendar(); useUiStore.getState().setToast({ kind: 'success', message: count ? `${count} new calendar events added.` : 'Calendar checked for the next 12 months.' }); }
+    try { const count = await importDeviceCalendar(); useUiStore.getState().setToast({ kind: 'success', message: count ? `${count} new calendar events added.` : 'Calendar checked for the next 2 months.' }); }
     catch (error) { useUiStore.getState().setToast({ kind: 'error', message: error instanceof Error ? error.message : 'Calendar import failed.' }); }
     finally { setImporting(false); }
   }
@@ -38,11 +38,11 @@ export function Events() {
     <SectionList style={styles.fill} sections={sections} keyExtractor={keyExtractor} renderItem={renderEvent} stickySectionHeadersEnabled={false} showsVerticalScrollIndicator={false} contentContainerStyle={styles.list}
       ListHeaderComponent={<View style={styles.header}>
         <SectionHero title="Good days ahead" subtitle="Your plans, Kerala & India holidays" icon="calendar-outline" />
-        <View style={styles.tools}><View style={styles.copy}><AppText variant="h4">Your calendar</AppText><AppText variant="caption" style={styles.muted}>Looking ahead 12 months</AppText></View><Pressable accessibilityRole="button" disabled={importing} onPress={() => void refreshCalendar()} style={styles.importButton}><Ionicons name="sync-outline" size={18} color={colors.primary[600]} /><AppText variant="labelSmall" style={styles.blue}>{importing ? 'Syncing…' : 'Sync calendar'}</AppText></Pressable></View>
+        <View style={styles.tools}><View style={styles.copy}><AppText variant="h4">Your calendar</AppText><AppText variant="caption" style={styles.muted}>Upcoming from today · next 2 months</AppText></View><Pressable accessibilityRole="button" disabled={importing} onPress={() => void refreshCalendar()} style={styles.importButton}><Ionicons name="sync-outline" size={18} color={colors.primary[600]} /><AppText variant="labelSmall" style={styles.blue}>{importing ? 'Syncing…' : 'Sync calendar'}</AppText></Pressable></View>
         <View style={styles.filters}>{(['all', 'personal', 'holidays'] as const).map((value) => <Pressable key={value} accessibilityRole="button" accessibilityState={{ selected: filter === value }} onPress={() => setFilter(value)} style={[styles.filter, filter === value && styles.selected]}><AppText variant="labelSmall" style={filter === value ? styles.blue : styles.muted}>{value === 'all' ? 'All events' : value === 'personal' ? 'My plans' : 'Holidays'}</AppText></Pressable>)}</View>
       </View>}
       renderSectionHeader={({ section }) => <AppText variant="labelRegular" style={styles.month}>{section.title}</AppText>}
-      ListEmptyComponent={<View style={styles.empty}><Ionicons name="calendar-clear-outline" size={32} color={colors.primary[500]} /><AppText variant="h4">Room for your next plan</AppText><AppText variant="bodySmall" style={styles.muted}>Confirmed appointments and bookings appear here after Refresh. Sync your calendar for personal events.</AppText></View>}
+      ListEmptyComponent={<View style={styles.empty}><Ionicons name="calendar-clear-outline" size={32} color={colors.primary[500]} /><AppText variant="h4">Room for your next plan</AppText><AppText variant="bodySmall" style={styles.muted}>Only the next 2 months of appointments, bookings, and holidays appear here. Past dates stay out of this list.</AppText></View>}
     />
   </ScreenScaffold>;
 }

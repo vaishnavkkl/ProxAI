@@ -64,7 +64,7 @@ const parse = (body) => parseInbox([message(body)]).parsed;
 
 test('events keep Kerala and national holidays plus personal plans, excluding other holiday feeds and ads', () => {
   const event = (id, merchant, extra = {}) => ({ id, merchant, type: 'event', amount: null, date: '2026-09-12', category: 'other', note: 'calendar', ...extra });
-  const rows = [event('cal-1', 'Onam'), event('cal-2', 'Gandhi Jayanti'), event('cal-3', 'Thanksgiving'), event('cal-4', 'Chhath Puja'), event('cal-5', 'Dentist appointment', { location: 'Bengaluru' }), event('cal-6', 'Dentist appointment', { location: 'Bengaluru' }), event('sms-1', 'Concert', { note: 'regex', sourceBody: 'Book now for a concert in Mumbai September 12' }), event('cal-old', 'Meeting', { date: '2026-08-01' }), event('cal-done', 'Meeting', { date: '2026-09-13' })];
+  const rows = [event('cal-1', 'Onam'), event('cal-2', 'Gandhi Jayanti'), event('cal-3', 'Thanksgiving'), event('cal-4', 'Chhath Puja'), event('cal-5', 'Dentist appointment', { location: 'Bengaluru' }), event('cal-6', 'Dentist appointment', { location: 'Bengaluru' }), event('sms-1', 'Concert', { note: 'regex', sourceBody: 'Book now for a concert in Mumbai September 12' }), event('cal-old', 'Meeting', { date: '2026-08-01' }), event('cal-done', 'Meeting', { date: '2026-09-13' }), event('cal-far', 'Wedding', { date: '2026-12-20', location: 'Bengaluru' })];
   assert.deepEqual(relevantEvents(rows, { 'cal-done': { status: 'done' } }, new Date(2026, 8, 9)).map((item) => item.id), ['cal-1', 'cal-2', 'cal-5']);
   assert.equal(normalizeEvent(event('holiday', 'Gandhi Jayanti', { date: '2026-10-02T00:00:00.000Z' })).date, '2026-10-02');
   assert.equal(normalizeEvent(event('appointment', 'Dentist appointment', { date: '2026-10-02T09:00:00.000Z' })).date, '2026-10-02T09:00:00.000Z');
@@ -101,11 +101,22 @@ test('all supported subscription packages are declared for Android visibility', 
 });
 
 test('dashboard balances urgent and upcoming plans, excludes transactions and caps visible items', () => {
-  const groups = { Important: [{ id: 'security', type: 'security' }], Overdue: Array.from({ length: 20 }, (_, i) => ({ id: `old-${i}`, type: 'bill', date: `2026-08-${String(i + 1).padStart(2, '0')}` })), Today: [{ id: 'bank', type: 'transaction' }, { id: 'appointment', type: 'event' }], Tomorrow: [{ id: 'train', type: 'travel' }], 'Next 7 days': [{ id: 'renewal', type: 'subscription' }] };
+  const groups = {
+    Important: [{ id: 'security', type: 'security' }],
+    Overdue: [
+      { id: 'old-bill', type: 'bill', date: '2026-08-19' },
+      ...Array.from({ length: 20 }, (_, i) => ({ id: `old-${i}`, type: 'action', date: `2026-08-${String(i + 1).padStart(2, '0')}` })),
+    ],
+    Today: [{ id: 'bank', type: 'transaction' }, { id: 'appointment', type: 'event' }],
+    Tomorrow: [{ id: 'train', type: 'travel' }],
+    'Next 7 days': [{ id: 'renewal', type: 'subscription' }],
+  };
   const ids = dashboardHighlights(groups).map((item) => item.id);
   assert.equal(ids.length, 6);
   assert.ok(ids.includes('appointment')); assert.ok(ids.includes('train')); assert.ok(ids.includes('renewal'));
-  assert.ok(!ids.includes('bank')); assert.ok(ids.includes('old-19'));
+  assert.ok(!ids.includes('bank'));
+  assert.ok(!ids.includes('old-bill'));
+  assert.ok(ids.includes('old-19'));
 });
 
 test('finance excludes card and food-app records on load and scan without deleting originals', () => {
@@ -244,14 +255,15 @@ test('duplicate transfer references count once, while separate payments and both
 test('Christmas is available without calendar permission and holiday feed copies do not duplicate it', () => {
   const { regionalHolidays } = require('../utils/regional-holidays.ts');
   const now = new Date(2026, 8, 9);
+  const nearChristmas = new Date(2026, 10, 1);
   const holidays = regionalHolidays(now);
   const christmas = holidays.find((item) => item.merchant === 'Christmas');
   assert.equal(christmas.date, '2026-12-25');
   assert.equal(holidays.find((item) => item.merchant === 'Mahanavami').date, '2026-10-20');
   assert.equal(holidays.find((item) => item.merchant === 'Vijayadashami').date, '2026-10-21');
-  const items = relevantEvents([{ ...christmas, id: 'cal-christmas', merchant: 'Christmas Day' }, ...holidays], {}, now);
-  assert.equal(items.filter((item) => /christmas/i.test(item.merchant)).length, 1);
-  assert.equal(relevantEvents([{ ...christmas, id: 'cal-christmas', merchant: 'Christmas Day' }, ...holidays], { 'cal-christmas': { status: 'done' } }, now).filter((item) => /christmas/i.test(item.merchant)).length, 0);
+  assert.equal(relevantEvents([{ ...christmas, id: 'cal-christmas', merchant: 'Christmas Day' }, ...holidays], {}, now).filter((item) => /christmas/i.test(item.merchant)).length, 0);
+  assert.equal(relevantEvents([{ ...christmas, id: 'cal-christmas', merchant: 'Christmas Day' }, ...holidays], {}, nearChristmas).filter((item) => /christmas/i.test(item.merchant)).length, 1);
+  assert.equal(relevantEvents([{ ...christmas, id: 'cal-christmas', merchant: 'Christmas Day' }, ...holidays], { 'cal-christmas': { status: 'done' } }, nearChristmas).filter((item) => /christmas/i.test(item.merchant)).length, 0);
   const gandhi = holidays.find((item) => item.merchant === 'Gandhi Jayanti');
   assert.equal(relevantEvents([{ ...gandhi, id: 'cal-gandhi', merchant: 'Mahatma Gandhi Jayanti' }, ...holidays], {}, now).filter((item) => /gandhi/i.test(item.merchant)).length, 1);
   const diwali = holidays.find((item) => item.merchant === 'Diwali');
@@ -456,3 +468,391 @@ test('screenshot menu labels and ProxAI dashboard captures cannot create fiction
   assert.deepEqual(extractScreenshot(asset, 'own-ui', 'Your day at a glance. Highlights. Electricity bill INR 1240 due September 10. All items.'), []);
   assert.equal(extractScreenshot(asset, 'real-bill', 'Electricity bill INR 1240 due September 10')[0].type, 'bill');
 });
+
+test('upcoming plans hide past events and travel even when old screenshots still parse them', () => {
+  const { isUpcomingPlan } = require('../utils/information.ts');
+  const now = new Date(2026, 8, 9);
+  const pastEvent = { id: 'old', type: 'event', amount: null, merchant: 'Meeting', date: '2026-08-01', category: 'other', note: '' };
+  const futureEvent = { ...pastEvent, id: 'next', date: '2026-09-20' };
+  const spend = { id: 'tx', type: 'transaction', amount: 120, merchant: 'Grocer', date: '2026-08-01', category: 'grocery', note: '' };
+  assert.equal(isUpcomingPlan(pastEvent, now), false);
+  assert.equal(isUpcomingPlan(futureEvent, now), true);
+  assert.equal(isUpcomingPlan(spend, now), true);
+  const pastTravel = { ...parse('Train 12627 departs tomorrow at 7:40 PM. PNR: 1234567890')[0], id: 'old-train', date: '2026-08-01' };
+  assert.equal(agendaGroups([pastTravel], {}, now).History.length, 0);
+  assert.equal(agendaGroups([pastTravel], {}, now).Later.length, 0);
+  const farTravel = { ...pastTravel, id: 'later-train', date: '2026-12-20' };
+  assert.equal(agendaGroups([farTravel], {}, now).Later.length, 0);
+  assert.equal(agendaGroups([futureEvent], {}, now).Later.length, 1);
+});
+
+test('old SMS events are not stored; unmatched screenshots are categorized by the model', async () => {
+  process.env.EXPO_OS = 'android';
+  await resetScanTest();
+  await ingestMessagePage([message('Appointment confirmed 1 Jan 2020 3 PM', 'sms-past')], 'test');
+  assert.equal(useEventStore.getState().items.length, 0);
+  const { scanScreenshots } = require('../services/screenshot-scanner.ts');
+  const soon = new Date(); soon.setDate(soon.getDate() + 21);
+  const day = `${soon.getFullYear()}-${String(soon.getMonth() + 1).padStart(2, '0')}-${String(soon.getDate()).padStart(2, '0')}`;
+  nativeTest.getScreenshotPage = async (_since, _until, after) => after ? [] : [{ id: '9', uri: 'content://media/external/images/media/9', name: 'Screenshot-9.png', revision: '1', capturedAt: receipt }];
+  nativeTest.getScreenshotHash = async () => 'llm-shot-hash';
+  nativeTest.recognizeScreenshot = async () => 'Invoice reference SCREEN_1 needs classification';
+  const result = await scanScreenshots(new Date(2026, 8, 1), () => {}, async (batch) => [{
+    sourceId: batch[0].id, type: 'event', amount: null, merchant: 'Dentist visit', date: day,
+    category: 'other', note: 'appointment', valid: true, important: 'normal', review: 'appointment', reference: null, location: null,
+  }]);
+  assert.equal(result.added, 1);
+  assert.equal(result.model, 1);
+  assert.equal(useEventStore.getState().items[0].merchant, 'Dentist visit');
+  assert.equal(useEventStore.getState().items[0].sourceKind, 'screenshot');
+});
+
+test('irrelevant screenshots still keep OCR text for review', async () => {
+  process.env.EXPO_OS = 'android';
+  await resetScanTest();
+  const { scanScreenshots, listScreenshotScans } = require('../services/screenshot-scanner.ts');
+  nativeTest.getScreenshotPage = async (_since, _until, after) => after ? [] : [{ id: '8', uri: 'content://media/external/images/media/8', name: 'Screenshot-8.png', revision: '1', capturedAt: receipt }];
+  nativeTest.getScreenshotHash = async () => 'menu-ocr-hash';
+  nativeTest.recognizeScreenshot = async () => 'Preferences Bills. Quick access. Pay bills. Renew subscriptions.';
+  const result = await scanScreenshots(new Date(2026, 8, 1));
+  assert.equal(result.added, 0);
+  const rows = await listScreenshotScans(new Date(2026, 8, 1));
+  assert.equal(rows.length, 1);
+  assert.match(rows[0].text, /Quick access/);
+  assert.equal(rows[0].itemIds.length, 0);
+});
+
+test('catalog keeps the recommended default and lists extra ExecuTorch exports', () => {
+  const { CATALOG, DEFAULT_MODEL_ID, getCatalogModel } = require('../services/model-catalog.ts');
+  assert.equal(DEFAULT_MODEL_ID, 'qwen2_5_0_5b');
+  assert.equal(getCatalogModel('qwen2_5_0_5b').recommended, true);
+  assert.equal(getCatalogModel('not-a-model').id, DEFAULT_MODEL_ID);
+  for (const id of ['smollm2_135m_bf16', 'hammer2_1_0_5b', 'qwen3_0_6b', 'qwen3_1_7b', 'qwen3_5_2b', 'llama3_2_1b', 'lfm2_5_1_2b', 'phi4_mini_4b', 'gemma4_e2b', 'lfm2_5_vl_450m']) {
+    assert.ok(CATALOG.some((item) => item.id === id), id);
+  }
+  assert.equal(getCatalogModel('smollm2_135m_bf16').compact, true);
+  assert.equal(getCatalogModel('hammer2_1_0_5b').compact, true);
+  assert.equal(getCatalogModel('gemma4_e2b').sources.model.includes('/xnnpack/'), true);
+});
+
+test('assistant prompts cover life and money', () => {
+  const { detectCoachTopic, nextCoachPrompts } = require('../utils/coach-prompts.ts');
+  const { coachSnapshot, buildSpendPlan, fallbackCoachReply, coachDisplayedReply } = require('../utils/spend-coach.ts');
+  assert.equal(detectCoachTopic('What is on my agenda today?'), 'today');
+  assert.equal(detectCoachTopic('What tasks still need me?'), 'tasks');
+  assert.equal(detectCoachTopic('How much can I spend each day?'), 'daily');
+  const plan = buildSpendPlan([], 40000, []);
+  const prompts = nextCoachPrompts(null, plan);
+  assert.ok(prompts.some((item) => /agenda/i.test(item)));
+  const now = new Date(2026, 8, 9);
+  const life = [{ id: 'a', type: 'action', merchant: 'College form', date: '2026-09-10', amount: null, category: 'action', note: 'x', sourceId: 'a' }];
+  const snapshot = coachSnapshot({
+    plan,
+    categories: [],
+    transactions: [],
+    expenses: [],
+    subscriptions: [],
+    events: [],
+    life,
+  });
+  assert.match(snapshot, /Tasks:/);
+  assert.match(snapshot, /College form/);
+  const agenda = fallbackCoachReply(plan, 'What is on my agenda today?', life, now);
+  assert.match(agenda, /College form/);
+  assert.doesNotMatch(agenda, /On your list/);
+  const pastBill = [{ id: 'b', type: 'bill', merchant: 'Electricity bill', date: '2026-09-01', amount: 1240, category: 'bills', note: 'x', sourceId: 'b' }];
+  assert.doesNotMatch(fallbackCoachReply(plan, 'What is on my agenda today?', pastBill, now), /Electricity/);
+  assert.match(coachDisplayedReply('', 'Coming up: College form.', false, 'Qwen is not on this phone yet.'), /not on this phone/);
+  assert.doesNotMatch(coachDisplayedReply('', 'Coming up: College form.', false, 'Qwen is not on this phone yet.'), /Coming up/);
+  assert.match(coachDisplayedReply('Keep ₹200 today.', 'Coming up: College form.', true), /Keep/);
+  const { clipCoachSnapshot } = require('../utils/coach-prompts.ts');
+  assert.equal(clipCoachSnapshot('short'), 'short');
+  assert.match(clipCoachSnapshot('x'.repeat(1600), 20), /truncated/);
+});
+
+test('OCR splits around unidentified symbols but keeps ordinary punctuation', () => {
+  const { splitOcrBlocks, ocrTextBlocks, selectedOcrText, ocrCoachQuestion, defaultImageFolders } = require('../utils/ocr-blocks.ts');
+  const blocks = splitOcrBlocks('Pay ₹1,240 due 10 Sep. □ KSEB bill | consumer 123');
+  const texts = ocrTextBlocks('Pay ₹1,240 due 10 Sep. □ KSEB bill | consumer 123').map((block) => block.text);
+  assert.ok(texts.some((item) => /Pay ₹1,240 due 10 Sep/.test(item)));
+  assert.ok(texts.some((item) => /KSEB bill/.test(item)));
+  assert.ok(texts.some((item) => /consumer 123/.test(item)));
+  assert.equal(blocks.filter((block) => block.kind === 'break').length >= 1, true);
+  assert.equal(ocrTextBlocks('Pay ₹1,240 due 10 Sep.').length, 1);
+  assert.equal(ocrTextBlocks('Email bills to you@home.in {plan} [draft] #1').length, 1);
+  const ocrUi = fs.readFileSync(path.join(root, 'components/ocr-text-blocks.tsx'), 'utf8');
+  assert.match(ocrUi, /Ask assistant/);
+  assert.doesNotMatch(ocrUi, /AppBottomSheet/);
+  assert.match(ocrUi, /setAsking\(true\)/);
+  const all = selectedOcrText(blocks, {});
+  assert.match(all, /KSEB bill/);
+  assert.match(ocrCoachQuestion('Create an email from this', 'KSEB bill due 10 Sep'), /no image/);
+  assert.match(ocrCoachQuestion('Create an email from this', 'KSEB bill due 10 Sep'), /Create an email/);
+  assert.deepEqual(defaultImageFolders([{ name: 'Camera' }, { name: 'Screenshots' }]), ['Screenshots']);
+  assert.deepEqual(defaultImageFolders([{ name: 'Camera' }]), ['Screenshots']);
+});
+
+test('image asks start a fresh chat and pins store a short Home summary', async () => {
+  const { summarizeCoachPin, formatCoachTime } = require('../utils/coach-pin.ts');
+  const { ocrCoachQuestion } = require('../utils/ocr-blocks.ts');
+  const { useCoachStore } = require('../store/coach-store.ts');
+  const question = ocrCoachQuestion('Rephrase this', `Pay KSEB ₹1,240 by 10 September. Consumer 123. ${'Extra line. '.repeat(30)}`);
+  const fromOcr = summarizeCoachPin(question);
+  assert.equal(/Work only from this OCR/i.test(fromOcr), false);
+  assert.ok(fromOcr.length <= 110);
+  assert.match(fromOcr, /Rephrase this/i);
+  const longReply = 'Pay the KSEB bill of ₹1,240 before 10 September from your savings. Keep the receipt with the consumer number and check the next bill cycle so the amount does not surprise you later this month.';
+  const summary = summarizeCoachPin(longReply);
+  assert.ok(summary.length <= 110);
+  assert.match(summary, /KSEB|1,240|September/);
+  assert.ok(formatCoachTime(new Date(2026, 8, 9, 14, 30).getTime()).length > 0);
+  useCoachStore.getState().startNewChat();
+  useCoachStore.getState().append('user', 'old thread');
+  useCoachStore.getState().append('assistant', 'old reply about last week');
+  assert.equal(useCoachStore.getState().messages.length, 2);
+  useCoachStore.getState().startFreshAsk(question);
+  assert.equal(useCoachStore.getState().messages.length, 0);
+  assert.equal(useCoachStore.getState().pendingAsk, question);
+  const { saveCoachPin, loadCoachPins, clearLedgerTables } = require('../services/database.ts');
+  await saveCoachPin({ id: 'pin-test', messageId: 'coach-1', summary, at: Date.now() });
+  assert.equal((await loadCoachPins())[0].summary, summary);
+  await clearLedgerTables();
+  assert.equal((await loadCoachPins()).length, 0);
+  useCoachStore.getState().startNewChat();
+});
+
+test('model JSON keeps numeric sourceIds and maps a positional batch', () => {
+  const { parsedItemSchema } = require('../types/llm-output.ts');
+  const { matchLlmItems } = require('../services/message-ingestion.ts');
+  assert.equal(parsedItemSchema.parse({
+    type: 'action', amount: null, merchant: 'Task', date: null, category: 'action', note: 'x', sourceId: 42,
+  }).sourceId, '42');
+  const chunk = [{ id: 'sms-1', sender: 'BANK', body: 'Invoice due Friday', date: '2026-09-09' }];
+  const positional = matchLlmItems([{
+    type: 'event', amount: null, merchant: 'Dentist', date: '2026-09-20', category: 'other', note: 'visit',
+  }], chunk[0], chunk);
+  assert.equal(positional[0].merchant, 'Dentist');
+  const tagged = matchLlmItems([{
+    sourceId: 'sms-1', type: 'event', amount: null, merchant: 'Dentist', date: '2026-09-20', category: 'other', note: 'visit',
+  }], chunk[0], chunk);
+  assert.equal(tagged[0].merchant, 'Dentist');
+  const unknown = matchLlmItems([{
+    sourceId: 'other', type: 'event', amount: null, merchant: 'Dentist', date: '2026-09-20', category: 'other', note: 'visit',
+  }], chunk[0], chunk);
+  assert.equal(unknown, undefined);
+});
+
+test('text-to-image cache requires every pipeline file and ignores a matching tokenizer basename', () => {
+  const { cacheFileNameFromUrl, isCachedTti, ttiCacheNames, ttiSourcesFor } = require('../services/text-to-image-catalog.ts');
+  const a = ttiSourcesFor('xnnpack');
+  const b = ttiSourcesFor('coreml');
+  virtualModelFiles.splice(0);
+  const files = new Map();
+  for (const url of Object.values(a)) {
+    const name = cacheFileNameFromUrl(url);
+    virtualModelFiles.push({ name, bytes: 100 });
+    files.set(name, 100);
+  }
+  assert.equal(ttiCacheNames(a).length, 2);
+  assert.equal(isCachedTti(a, files), true);
+  assert.equal(isCachedTti(b, files), false);
+  assert.notEqual(cacheFileNameFromUrl(a.modelPath), cacheFileNameFromUrl(b.modelPath));
+  assert.equal(cacheFileNameFromUrl(a.tokenizerPath), cacheFileNameFromUrl(b.tokenizerPath));
+});
+
+test('free-app-memory native code never kills other Android processes', () => {
+  const kotlin = fs.readFileSync(path.join(root, 'modules/finlife-native/android/src/main/java/expo/modules/finlifenative/FinlifeNativeModule.kt'), 'utf8');
+  assert.match(kotlin, /releaseAppMemory/);
+  assert.doesNotMatch(kotlin, /killBackgroundProcesses|forceStopPackage|Process\.killProcess/);
+  assert.match(kotlin, /Does not stop other apps/);
+});
+
+test('on-device catalog lists only models whose trio is already cached', () => {
+  const { cacheNameFromUrl, listOnDeviceCatalog } = require('../services/model-storage.ts');
+  const { resolveModelSources } = require('../services/model-catalog.ts');
+  virtualModelFiles.splice(0);
+  const custom = { customModelUrl: '', customTokenizerUrl: '', customTokenizerConfigUrl: '' };
+  assert.equal(listOnDeviceCatalog(custom).length, 0);
+  const sources = resolveModelSources({ modelId: 'qwen2_5_0_5b', ...custom });
+  for (const url of Object.values(sources)) virtualModelFiles.push({ name: cacheNameFromUrl(url), bytes: 100 });
+  const listed = listOnDeviceCatalog(custom);
+  assert.ok(listed.some((item) => item.id === 'qwen2_5_0_5b'));
+  assert.ok(listed.every((item) => item.id !== 'custom'));
+});
+
+test('chat unloads the previous model before loading a downloaded one', () => {
+  const coach = fs.readFileSync(path.join(root, 'screens/coach/index.tsx'), 'utf8');
+  const runtime = fs.readFileSync(path.join(root, 'services/llm-runtime-executorch.ts'), 'utf8');
+  assert.match(coach, /hasCachedSources/);
+  assert.match(coach, /CATALOG/);
+  assert.match(coach, /switchOnDeviceModel/);
+  assert.match(coach, /Start a new chat/);
+  const switchFn = runtime.slice(runtime.indexOf('async function switchOnDeviceModel'), runtime.indexOf('async function unloadFromMemory'));
+  assert.match(switchFn, /unloadSession/);
+  assert.match(switchFn, /loadSession/);
+  assert.ok(switchFn.indexOf('unloadSession') < switchFn.indexOf('loadSession'));
+});
+
+test('leaving chat unloads RAM, asks first, and never stacks a second chat screen', () => {
+  const coach = fs.readFileSync(path.join(root, 'screens/coach/index.tsx'), 'utf8');
+  const runtime = fs.readFileSync(path.join(root, 'services/llm-runtime-executorch.ts'), 'utf8');
+  const layout = fs.readFileSync(path.join(root, 'app/_layout.tsx'), 'utf8');
+  const open = fs.readFileSync(path.join(root, 'utils/open-coach.ts'), 'utf8');
+  const life = fs.readFileSync(path.join(root, 'components/life-agenda.tsx'), 'utf8');
+  const finance = fs.readFileSync(path.join(root, 'screens/finance/index.tsx'), 'utf8');
+  const shots = fs.readFileSync(path.join(root, 'screens/screenshots/index.tsx'), 'utf8');
+  const detail = fs.readFileSync(path.join(root, 'components/screenshot-detail-sheet.tsx'), 'utf8');
+  const release = runtime.slice(runtime.indexOf('async function releaseCoachSession'), runtime.indexOf('async function switchOnDeviceModel'));
+  assert.match(coach, /AppDialog/);
+  assert.match(coach, /Leave chat\?/);
+  assert.match(coach, /Start a new chat\?/);
+  assert.match(coach, /beforeRemove/);
+  assert.match(coach, /unloadCoachSession/);
+  assert.match(coach, /startNewChat/);
+  assert.match(release, /unloadSession/);
+  assert.doesNotMatch(release, /delay\(700\)/);
+  assert.doesNotMatch(layout, /getId=\{\(\) => 'coach'\}/);
+  assert.match(layout, /dangerouslySingular/);
+  assert.match(open, /navigate\('\/coach'/);
+  assert.match(open, /dangerouslySingular: true/);
+  assert.match(life, /openCoach/);
+  assert.match(finance, /openCoach/);
+  assert.match(shots, /openCoach/);
+  assert.match(detail, /openCoach/);
+  assert.doesNotMatch(life, /router\.push\('\/coach'/);
+  assert.doesNotMatch(finance, /push\('\/coach'/);
+  assert.doesNotMatch(shots, /push\('\/coach'/);
+  assert.doesNotMatch(detail, /push\('\/coach'/);
+});
+
+test('language-model catalog does not list the image diffusion model', () => {
+  const { CATALOG } = require('../services/model-catalog.ts');
+  const { TTI_MODEL_NAME } = require('../services/text-to-image-catalog.ts');
+  assert.ok(CATALOG.every((item) => !/BK-SDM|text-to-image|diffusion/i.test(`${item.id} ${item.label}`)));
+  assert.equal(TTI_MODEL_NAME, 'SDXS 512 DreamShaper');
+});
+
+test('one native model slot: LLM load unloads vision, image gen unloads the LLM', () => {
+  const runtime = fs.readFileSync(path.join(root, 'services/llm-runtime-executorch.ts'), 'utf8');
+  const tti = fs.readFileSync(path.join(root, 'services/text-to-image.ts'), 'utf8');
+  const slot = fs.readFileSync(path.join(root, 'services/inference-slot.ts'), 'utf8');
+  assert.match(runtime, /exclusiveInference/);
+  assert.match(runtime, /unloadVisionFromMemory/);
+  assert.match(runtime, /occupyInference\('llm'\)/);
+  assert.match(runtime, /Could not unload the image generator/);
+  assert.match(tti, /exclusiveInference/);
+  assert.match(tti, /releaseLlmSlot/);
+  assert.match(tti, /occupyInference\('tti'\)/);
+  assert.match(tti, /createSdxsTextToImage/);
+  assert.doesNotMatch(tti, /cancelFetching/);
+  assert.doesNotMatch(tti, /unloadModelFromMemory/);
+  assert.match(slot, /Nested calls deadlock/);
+});
+
+test('image download stop cancels the resource fetcher, not only interrupt', () => {
+  const tti = fs.readFileSync(path.join(root, 'services/text-to-image.ts'), 'utf8');
+  const imagine = fs.readFileSync(path.join(root, 'screens/imagine/index.tsx'), 'utf8');
+  const interrupt = tti.slice(tti.indexOf('export function interruptTextToImage'), tti.indexOf('async function downloadUnlocked'));
+  const dispose = tti.slice(tti.indexOf('export async function disposeTextToImage'), tti.indexOf('export function interruptTextToImage'));
+  assert.match(interrupt, /cancelled = true/);
+  assert.match(interrupt, /downloadAbort\?\.abort/);
+  assert.doesNotMatch(dispose, /downloadAbort/);
+  assert.doesNotMatch(dispose, /cancelled = true/);
+  assert.match(tti, /TTI_STOPPED/);
+  assert.match(tti, /attachImagine/);
+  assert.match(tti, /detachImagine/);
+  assert.match(imagine, /interruptTextToImage/);
+  assert.match(imagine, /ScreenBack/);
+  assert.match(imagine, /attachImagine/);
+  assert.match(imagine, /detachImagine/);
+  assert.doesNotMatch(imagine, /interruptTextToImage\(\);\s*\n\s*router\.back/);
+  assert.match(imagine, /name="stop"/);
+  assert.match(imagine, /name="download-outline"/);
+});
+
+test('chat streams tokens and stack screens share the same back control', () => {
+  const coach = fs.readFileSync(path.join(root, 'screens/coach/index.tsx'), 'utf8');
+  const runtime = fs.readFileSync(path.join(root, 'services/llm-runtime-executorch.ts'), 'utf8');
+  const screenshots = fs.readFileSync(path.join(root, 'screens/screenshots/index.tsx'), 'utf8');
+  const back = fs.readFileSync(path.join(root, 'components/screen-back.tsx'), 'utf8');
+  const notice = fs.readFileSync(path.join(root, 'services/download-notice.ts'), 'utf8');
+  const tti = fs.readFileSync(path.join(root, 'services/text-to-image.ts'), 'utf8');
+  const ask = runtime.slice(runtime.indexOf('async function askCoach'), runtime.indexOf('async function acquireCoachSession'));
+  assert.match(ask, /sendMessage/);
+  assert.match(ask, /onToken/);
+  assert.match(coach, /patch\(/);
+  assert.match(coach, /ScreenBack/);
+  assert.match(coach, /liveOn/);
+  assert.match(coach, /interruptCoach/);
+  assert.doesNotMatch(coach, /!focused \?/);
+  assert.match(screenshots, /ScreenBack/);
+  assert.match(back, /chevron-back/);
+  assert.match(notice, /reportDownloadNotice/);
+  assert.match(notice, /channelId: CHANNEL/);
+  assert.match(runtime, /reportDownloadNotice/);
+  assert.match(tti, /reportDownloadNotice/);
+});
+
+test('downloads show transferred size and retry a network abort', () => {
+  const { formatBytes, transferLabel } = require('../utils/format-bytes.ts');
+  const tti = fs.readFileSync(path.join(root, 'services/text-to-image.ts'), 'utf8');
+  const runtime = fs.readFileSync(path.join(root, 'services/llm-runtime-executorch.ts'), 'utf8');
+  const imagine = fs.readFileSync(path.join(root, 'screens/imagine/index.tsx'), 'utf8');
+  assert.match(formatBytes(10 * 1024 * 1024), /10 MB/);
+  assert.match(transferLabel('SDXS 512 DreamShaper XNNPACK FP32', 82_000_000, 1_640_000_000, 0.05), /\/|%/);
+  assert.match(tti, /download\(/);
+  assert.match(tti, /AbortController/);
+  const downloadFn = tti.slice(tti.indexOf('async function downloadUnlocked'), tti.indexOf('export async function downloadTextToImage'));
+  assert.doesNotMatch(downloadFn, /releaseLlmSlot/);
+  assert.doesNotMatch(downloadFn, /cacheSidecarFile/);
+  assert.doesNotMatch(runtime, /cacheTokenizerSources/);
+  assert.match(fs.readFileSync(path.join(root, 'services/model-storage.ts'), 'utf8'), /export async function cacheSidecarFile/);
+  assert.match(runtime, /transferLabel/);
+  assert.match(runtime, /isNetworkAbort/);
+  assert.match(imagine, /formatBytes/);
+  assert.match(imagine, /Save /);
+});
+
+test('free app memory lives on the activity sheet, not Settings', () => {
+  const settings = fs.readFileSync(path.join(root, 'screens/settings/index.tsx'), 'utf8');
+  const processing = fs.readFileSync(path.join(root, 'screens/processing/index.tsx'), 'utf8');
+  assert.match(processing, /Free app memory/);
+  assert.match(processing, /Native model slot/);
+  assert.doesNotMatch(settings, /<AppText[^>]*>\s*Free app memory\s*<\/AppText>/);
+  assert.match(settings, /title="Image generation"/);
+  assert.match(settings, /tag="LLM"/);
+  assert.match(settings, /tag="Image"/);
+  assert.match(settings, /tagTone="image"/);
+  assert.match(settings, /App resources/);
+  assert.match(settings, /ImageModelPicker/);
+  assert.match(settings, /title="Remove downloaded models"/);
+  assert.doesNotMatch(settings, /push\('\/imagine'/);
+});
+
+test('executorch 0.10 uses the unified API for chat and image generation', () => {
+  const pkg = require('../package.json');
+  const runtime = fs.readFileSync(path.join(root, 'services/llm-runtime-executorch.ts'), 'utf8');
+  const setup = fs.readFileSync(path.join(root, 'services/executorch-setup.ts'), 'utf8');
+  const catalog = fs.readFileSync(path.join(root, 'services/model-catalog.ts'), 'utf8');
+  const tti = fs.readFileSync(path.join(root, 'services/text-to-image.ts'), 'utf8');
+  const persist = fs.readFileSync(path.join(root, 'services/settings-persist.ts'), 'utf8');
+  const metro = fs.readFileSync(path.join(root, 'metro.config.js'), 'utf8');
+  assert.equal(pkg.dependencies['react-native-executorch'], '0.10.0');
+  assert.ok(pkg.dependencies['react-native-blob-util']);
+  assert.equal(pkg.dependencies['react-native-executorch-expo-resource-fetcher'], undefined);
+  assert.ok(pkg['react-native-executorch'].features.includes('llm'));
+  assert.ok(pkg['react-native-executorch'].features.includes('textToImage'));
+  assert.doesNotMatch(runtime, /react-native-executorch\/legacy/);
+  assert.doesNotMatch(runtime, /expo-resource-fetcher/);
+  assert.match(runtime, /createLLMChatSession/);
+  assert.match(runtime, /download\(/);
+  assert.doesNotMatch(setup, /initExecutorch/);
+  assert.match(catalog, /resolve\/v0\.10\.0/);
+  assert.doesNotMatch(catalog, /resolve\/v0\.9\.0/);
+  assert.match(tti, /createSdxsTextToImage/);
+  assert.match(tti, /encodeRgbaPng/);
+  assert.match(persist, /ttiVariantId/);
+  assert.doesNotMatch(metro, /react-native-executorch\/legacy/);
+  assert.doesNotMatch(metro, /expo-resource-fetcher/);
+});
+

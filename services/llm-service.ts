@@ -4,6 +4,7 @@ import { ingestMessagePage } from '@/services/message-ingestion';
 import { getCatalogModel, resolveModelSources } from '@/services/model-catalog';
 import { ensureParserRevision } from '@/services/parser-revision';
 import { saveScanSummary } from '@/services/scan-summary';
+import { notifyScanResult } from '@/services/reminders';
 import { scanScreenshots, screenshotsEnabled } from '@/services/screenshot-scanner';
 import { collectInboxPage, rememberInboxPage } from '@/services/sms-inbox';
 import { useSettingsStore } from '@/store/settings-store';
@@ -11,12 +12,24 @@ import { getLlmRuntime } from './llm-runtime';
 import type { BatchResult, CoachTurn, LlmAvailability, ProgressFn } from './llm-runtime-types';
 
 export async function getModelAvailability(): Promise<LlmAvailability> { return getLlmRuntime().getAvailability(); }
+export { getLlmRuntime } from './llm-runtime';
 export async function downloadSelectedModel(onProgress: ProgressFn): Promise<void> { return getLlmRuntime().downloadSelectedModel(onProgress); }
+export async function switchOnDeviceModel(onProgress: ProgressFn): Promise<void> { return getLlmRuntime().switchOnDeviceModel(onProgress); }
 export async function unloadModelFromMemory(): Promise<boolean> { return getLlmRuntime().unloadFromMemory(); }
+export async function releaseLlmSlot(): Promise<void> { return getLlmRuntime().releaseLlmSlot(); }
 export function getModelRamState() { return getLlmRuntime().getRamState(); }
-export async function askCoach(question: string, snapshot: string, onProgress: ProgressFn, history: CoachTurn[] = []): Promise<string> { return getLlmRuntime().askCoach(question, snapshot, onProgress, history); }
+export async function askCoach(
+  question: string,
+  snapshot: string,
+  onProgress: ProgressFn,
+  history: CoachTurn[] = [],
+  onToken?: (text: string) => void,
+): Promise<string> {
+  return getLlmRuntime().askCoach(question, snapshot, onProgress, history, onToken);
+}
 export async function loadCoachSession(onProgress: ProgressFn): Promise<void> { return getLlmRuntime().acquireCoachSession(onProgress); }
 export async function unloadCoachSession(): Promise<void> { return getLlmRuntime().releaseCoachSession(); }
+export function interruptCoach(): void { getLlmRuntime().interruptGeneration(); }
 let scanning = false;
 
 export async function processRefreshMessages(onProgress: ProgressFn, options: { skipMail?: boolean } = {}): Promise<BatchResult> {
@@ -24,7 +37,7 @@ export async function processRefreshMessages(onProgress: ProgressFn, options: { 
   if (scanning) return { ...result, skipReason: 'A scan is already running.' };
   scanning = true;
   const runtime = getLlmRuntime();
-  let regex = 0, model = 0, dropped = 0;
+  let regex = 0, model = 0, dropped = 0, llmRan = false;
   try {
     await ensureParserRevision();
     const settings = useSettingsStore.getState();
@@ -50,6 +63,7 @@ export async function processRefreshMessages(onProgress: ProgressFn, options: { 
       result.life = (result.life ?? 0) + page.life; result.errors += page.errors;
       result.skipped = (result.skipped ?? 0) + page.pending;
       regex += page.regex; model += page.model; dropped += page.dropped;
+      llmRan = llmRan || page.llmRan;
       inferenceFailure = page.failureReason ?? inferenceFailure;
       if (page.pending) result.skipReason = inferenceFailure ?? (availability.status === 'available'
         ? 'Some AI batches could not finish. Their messages will retry on Refresh.'
@@ -72,15 +86,17 @@ export async function processRefreshMessages(onProgress: ProgressFn, options: { 
     await importInstalledSubscriptions().catch(() => { result.errors++; });
     if (await screenshotsEnabled()) {
       try {
-        const shots = await scanScreenshots(new Date(), (label) => onProgress(0.95, label));
+        const shots = await scanScreenshots(new Date(), (label) => onProgress(0.95, label), availability.status === 'available' && !inferenceFailure
+          ? (messages) => runtime.inferUnmatched(messages, onProgress) : undefined);
         result.screenshots = shots.read; result.screenshotItems = shots.added; result.errors += shots.errors;
       } catch (error) {
         result.errors++;
         result.skipReason = error instanceof Error ? error.message : 'Screenshot scan could not finish.';
       }
     }
-    await saveScanSummary({ at: Date.now(), modelLabel: getCatalogModel(settings.modelId).label, usedModel: model > 0,
+    await saveScanSummary({ at: Date.now(), modelLabel: getCatalogModel(settings.modelId).label, usedModel: llmRan || model > 0,
       transactions: result.transactions, events: result.events, subscriptions: result.subscriptions, life: result.life ?? 0, regex, model, dropped });
+    await notifyScanResult({ events: result.events, life: result.life ?? 0, bills: result.screenshotItems ?? 0 });
   } catch {
     result.errors++;
     result.skipReason = 'Scan stopped early. Saved pages are kept; Refresh retries unfinished messages.';

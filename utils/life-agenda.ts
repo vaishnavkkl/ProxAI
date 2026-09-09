@@ -1,6 +1,6 @@
 import type { ItemState } from '@/services/database';
 import type { LedgerItem } from '@/types/ledger';
-import { localDay, parseLocalDate } from '@/utils/message-date';
+import { localDay, parseLocalDate, upcomingDayLimit } from '@/utils/message-date';
 import { deduplicateInformation, informationTitle, isUsefulInformation } from '@/utils/information';
 
 export const MODULES = [
@@ -39,9 +39,11 @@ export function agendaGroups(items: LedgerItem[], states: Record<string, ItemSta
     const day = Number.isFinite(parsed.getTime()) ? localDay(parsed) : '';
     if (!day) { groups['Date needed'].push(item); continue; }
     if (day < today) {
+      if (item.type === 'event' || item.type === 'travel') continue;
       const actionable = ['action', 'bill', 'subscription', 'document', 'purchase', 'delivery'].includes(item.type);
       groups[actionable ? 'Overdue' : 'History'].push(item);
-    } else if (day === today) groups.Today.push(item);
+    } else if ((item.type === 'event' || item.type === 'travel') && day > upcomingDayLimit(now)) continue;
+    else if (day === today) groups.Today.push(item);
     else if (day === tomorrow) groups.Tomorrow.push(item);
     else if (day <= weekEnd) groups['Next 7 days'].push(item);
     else groups.Later.push(item);
@@ -64,7 +66,7 @@ export function dailyDigest(items: LedgerItem[]): string {
 
 export function dashboardHighlights(groups: Record<string, LedgerItem[]>): LedgerItem[] {
   const upcoming = [...groups.Today, ...groups.Tomorrow, ...groups['Next 7 days']].filter((item) => item.type !== 'transaction');
-  const overdue = [...groups.Overdue].sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''));
+  const overdue = groups.Overdue.filter((item) => item.type !== 'bill' && item.type !== 'subscription').sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''));
   const priority = [...groups.Important.slice(0, 2), ...overdue.slice(0, 2), ...upcoming];
   const seen = new Set<string>();
   return [...priority, ...groups.Important, ...overdue].filter((item) => {

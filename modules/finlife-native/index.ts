@@ -3,6 +3,11 @@ export type NativeMemorySnapshot = {
   availBytes: number;
   nativeHeapBytes: number;
   javaUsedBytes: number;
+  lowMemory?: number;
+  thresholdBytes?: number;
+  clearedCacheBytes?: number;
+  freedJavaBytes?: number;
+  freedNativeBytes?: number;
 };
 
 export type NativeInboxRow = {
@@ -18,6 +23,11 @@ export type NativeScreenshot = {
   name: string;
   capturedAt: number;
   revision: string;
+};
+
+export type NativeImageFolder = {
+  name: string;
+  count: number;
 };
 
 export type NativeCalendarRow = {

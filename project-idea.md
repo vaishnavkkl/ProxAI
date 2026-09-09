@@ -39,7 +39,8 @@ Finance remains a complete supporting capability: preserve the existing ledger, 
 | Manual entry | Tasks with optional due dates and times | Dedicated creation forms for other modules |
 | Device calendars | Upcoming events, including Gmail-derived events already synced to the calendar | Better update reconciliation and duplicate detection |
 | Installed subscription apps | Known package checks and app-specific deep-link resolution; discovered services have Open and Add my plan actions | More provider integrations with actual renewal evidence |
-| Android screenshots | Bundled offline Latin OCR for a selected capture month; current-month new images included in Refresh after opt-in; local image hash cache and source preview | Malayalam OCR after model and device evaluation; richer screenshot interpretation |
+| Android screenshots | Image Intelligence: bundled offline Latin OCR for a selected capture month; current-month new images included in Refresh after opt-in; local image hash cache, source preview, and OCR Ask into the personal assistant | Malayalam OCR after model and device evaluation; layout-aware screenshot interpretation |
+| On-device image generation | ExecuTorch 0.10 SDXS 512 DreamShaper (XNNPACK default, Core ML on iOS). Unloads the chat LLM first. Stop cancels download and drawing. Files stay on disk. Settings lists image models like language models and can remove downloads | Smaller evaluated export after RAM/latency measurement on target phones |
 | Imported email files | Planned; separate from calendar import | Local file import and parsing with explicit user choice |
 | iOS | manual tasks and screenshot extraction; supported native calendar access | Broader local imports; no automatic SMS inbox access |
 | Web | Manual organizer and structured plan entry with SQLite web configuration; native SMS and LLM are unavailable | Further browser validation and hosting support |
@@ -54,7 +55,7 @@ SMS pagination sorts and advances by the same ID. Scans process bounded pages an
 
 Screenshot OCR reads one image at a time from Screenshot-named folders, records original image provenance, avoids duplicate imports of identical files and shows only images containing useful extracted details. This feature is Android-only, requires photo permission, and currently recognizes English/Latin rather than Malayalam. It runs on manual scan/Refresh; an automatic background folder watcher is not implemented.
 
-The existing Qwen2.5 0.5B default remains; LFM2.5 350M is an extraction candidate and Qwen3.5 0.8B is an optional advanced text model. The model picker shows verified download sizes and license labels, not unmeasured low-RAM promises. Larger models require device evaluation before production use. See [current mobile AI research and implementation decisions](docs/mobile-ai-research.md).
+The existing Qwen2.5 0.5B default remains; LFM2.5 350M is an extraction candidate and Qwen3.5 0.8B is an optional advanced text model. The model picker shows verified download sizes and license labels, not unmeasured low-RAM promises. Larger models require device evaluation before production use. Image generation is **not** in that picker: SDXS 512 DreamShaper is tagged Image in Settings and occupies the same native RAM slot as the LLM. See [current mobile AI research and implementation decisions](docs/mobile-ai-research.md).
 
 ## 3. Modules
 
@@ -128,9 +129,9 @@ Retain the existing five tabs:
 2. **Finance:** Transactions, account/category filters, analysis, budgeting, and planning tools.
 3. **Events:** Existing events and calendar import, including saved title/date corrections.
 4. **Subscriptions:** Existing discovered apps and extracted renewals, including saved corrections.
-5. **Settings:** Existing model, schedule, scan-range, privacy, resource, and local-data controls.
+5. **Settings:** Language-model picker (LLM tag), separate Image generation picker (SDXS 512 DreamShaper), scan range, privacy, remove downloaded models, and a link to the Activity sheet. Free app memory is on Activity, not Settings.
 
-Keep the money coach and processing/resource views. New modules do not need a tab each. Preserve established navigation unless a separate navigation change is agreed.
+Keep the money coach, Imagine, Image Intelligence, and the Activity (processing/resource) sheet. New modules do not need a tab each. Preserve established navigation unless a separate navigation change is agreed.
 
 ## 5. Message-to-action pipeline
 
@@ -169,7 +170,7 @@ Preserve Expo SDK 54, TypeScript strict mode, New Architecture, React Compiler, 
 | State | Zustand slices for transactions, events, subscriptions, life items/user states, budgets, settings, and UI progress |
 | Database | Existing `expo-sqlite`, additive migrations, parameterized queries, transactional writes |
 | Settings | Existing SQLite-backed persistence |
-| Local AI | Existing ExecuTorch runtime, model catalog, download controls, and Expo resource fetcher; native development build required |
+| Local AI | ExecuTorch 0.10 on a development build; chat, scan, and image generation use the unified 0.10 API (`createLLMChatSession`, `download`, `createSdxsTextToImage`); one native occupant (LLM **or** image pipeline, never both); Stop aborts downloads |
 | Parsing | Bank/life/security rules, shared date handling, Zod-validated model output |
 | Calendar | Existing native integration and `expo-calendar` |
 | Lists | Virtualized FlatList/FlashList with stable IDs; never mount an entire message history in a ScrollView |
@@ -191,7 +192,8 @@ Retain the original constraints against Axios, AsyncStorage, legacy SQLite/notif
 - Explain SMS/calendar access in terms of everyday organization, not only finance.
 - Keep structured manual entry usable when inbox access is unavailable or revoked.
 - Treat stored messages and references as sensitive. Do not claim encryption at rest unless configured and verified.
-- Model downloads require connectivity; local parsing and downloaded-model inference should work offline.
+- Model downloads require connectivity; local parsing and downloaded-model inference should work offline. Image generation also stays on-device after the first HTTPS fetch of SDXS 512 DreamShaper.
+- Free app memory lives on the Activity sheet. It unloads this app’s LLM and image pipeline and clears this app’s image cache. It must never kill, force-stop, or ask Android to stop other apps.
 - Retain local-data reset controls and clearly explain what they remove, including the distinction between budget and organizer data.
 - CSV/JSON export and import remain roadmap items. Define whether source text is included and require deliberate user choice.
 - Contacts enrichment, optional analytics, and cloud sync remain optional future work, not core dependencies. Any sync design must define encryption and exclude raw-message upload by default.
@@ -201,17 +203,20 @@ Retain the original constraints against Axios, AsyncStorage, legacy SQLite/notif
 
 ### Existing capabilities to preserve
 
-Finance parsing and ledger views; bank filters; budgeting and fixed expenses; salary/EMI planning; money coach; calendar import; subscription discovery; model selection/download controls; scan settings; processing/resource views; local-data controls.
+Finance parsing and ledger views; bank filters; budgeting and fixed expenses; salary/EMI planning; personal assistant (coach); calendar import; subscription discovery; language-model selection/download; scan settings; Activity/resource sheet; local-data controls.
 
 ### Implemented expansion
 
 - Life-item extraction/storage alongside the existing ledger.
-- Daily agenda/digest, module filters, search, virtualized cards, manual tasks, and screenshot extraction.
+- Daily agenda/digest, module filters, search, virtualized cards, manual tasks, and Image Intelligence (screenshot OCR + OCR Ask).
 - Editable titles/dates, completion/dismissal, and reopening history.
 - Delivery updates by sender/reference, possible-risk review, and calendar-reminder creation.
 - Persistence of source context and user corrections; rescans that preserve saved data.
+- Coach pins in SQLite; downloaded-only chat model switch; greedy JSON extraction.
+- On-device text-to-image (SDXS 512 DreamShaper) on Imagine; Settings lists image backends; Stop cancels download and generate.
+- Single native inference slot: LLM and image pipeline never share RAM. Free app memory on the Activity sheet (this process only; other apps are never killed).
 
-Implementation does not mean every native flow has been verified on a phone. Device SMS permissions, local-model inference, calendar reminders, and performance still require native validation.
+Implementation does not mean every native flow has been verified on a phone. Device SMS permissions, local-model inference, image generation, calendar reminders, and performance still require native validation.
 
 ### Next: reliability and real-device validation
 
@@ -243,10 +248,38 @@ Retain future event calendar views, data export/import, accessibility polish, of
 
 The defining experience is **“My messages became an organized day.”** Finance is one valuable part, alongside actions, events, travel, deliveries, and security.
 
+## 11. Shipped vs next (2026 on-device AI)
+
+This is a living spec, not a changelog. 2026 phone AI is useful when it is **local, private, and RAM-honest**: one loaded native model, regex before LLM, no cloud required for the organizer.
+
+### Done in this codebase
+
+| Area | What shipped |
+|---|---|
+| Organizer | Agenda groups, module filters, search, manual tasks, source evidence, corrections, complete/dismiss/reopen |
+| Image Intelligence | Latin OCR on screenshots/gallery/camera; folder + month scan; OCR Ask into the assistant; images stay on-device |
+| Personal assistant | On-device chat over the saved snapshot; pins persist; switch only among **already downloaded** LLMs |
+| Language models | ExecuTorch catalog (default Qwen2.5 0.5B); download once over HTTPS; greedy JSON for scans |
+| Image generation | SDXS 512 DreamShaper via ExecuTorch 0.10. Imagine UI; Settings image-model list tagged **Image**, distinct from **LLM**; remove downloads to free storage |
+| Memory | Shared exclusive slot; TTI unloads LLM; LLM load unloads TTI; Stop aborts `download()`; Activity **Free app memory** |
+| Privacy | SMS, amounts, OCR text, and generated images stay on this phone. This app does not stop other apps to reclaim RAM |
+
+### Future updates (evaluate on device before shipping)
+
+**Models.** Optional smaller extraction LLMs (LFM2.5 350M) only after JSON-accuracy measurement on a consented SMS set. Multimodal VLMs (LFM2.5-VL) for screenshots only if they replace OCR without a second resident model. Do not load LLM + vision + diffusion together. All on-device models resolve from Hugging Face `v0.10.0` exports via built-in `download()`.
+
+**Understanding.** Malayalam OCR (Tesseract or a later ML Kit script) after Kerala screenshot eval. Layout-aware receipts. Richer daily digest from saved facts, still no invented events. Voice in/out only with an unloaded LLM/TTI policy.
+
+**Life ops.** Local reminders with snooze for tasks, trips, deliveries, bills. Email-file import the user picks. CSV/JSON export with an explicit choice to include source text. Store-compliant SMS policy before Play release.
+
+**Product polish.** Accessibility (TalkBack, contrast, 48px targets). Offline/retry copy. What-if money planning and 80% budget alerts if they stay on-device. Event month calendar. Dark mode using the existing token invert map.
+
+**What 2026 does not mean for ProxAI.** A cloud copilot, always-on background LLM, automatic cancellation of subscriptions, or claiming a model is “best” without a measured set. On-device remains the product: private organizer first, generative extras second, and RAM as a hard product constraint.
+
 ## Latest product refinements
 
-Home gives Screenshot Intelligence a prominent card above the daily brief. It shows concise, deduplicated information and up to six highlights; transaction history lives in Finance. Optional task/renewal entry remains, while pasted-message entry and Settings copy actions are removed. Original evidence is available only when a user opens Source in item details.
+Home leads with **Image Intelligence**, the personal assistant, and **Imagine** above the daily brief. Highlights stay concise; transaction history lives in Finance. Optional task/renewal entry remains. Original evidence is available when a user opens Source in item details.
 
-Settings uses a different icon for each option. Events uses month sections and personal/holiday filters, imports the next twelve months, and includes offline Kerala/India observances including Christmas. Year-specific festival dates come from the Kerala government calendar; unverified future lunar dates are not invented.
+Settings tags language models **LLM** and image generation **Image**. Free app memory is on Home → Activity (App resources). Events uses month sections and personal/holiday filters, imports the next twelve months, and includes offline Kerala/India observances including Christmas. Year-specific festival dates come from the Kerala government calendar; unverified future lunar dates are not invented.
 
 Renewals displays actual installed-app icons with bundled public publisher icons for common services. App detection does not imply a paid plan. Finance labels credits/debits explicitly, offers direction filters, shows dates/accounts/references, and counts repeated transfer references once. Credit-card, Swiggy and Zomato transactions remain excluded at the user's request; other banking functionality is retained.

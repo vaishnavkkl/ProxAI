@@ -1,6 +1,7 @@
 import { getScanMeta, setScanMeta } from '@/services/database';
 import { DEFAULT_MODEL_ID, isModelId, type ModelId } from '@/services/model-catalog';
 import { DEFAULT_WINDOWS, parseWindows, type ScheduleWindow } from '@/services/llm-schedule';
+import { DEFAULT_TTI_VARIANT, isTtiVariantId, type TtiVariantId } from '@/services/text-to-image-catalog';
 
 export type ScanLookbackMonths = 1 | 2 | 3 | 6;
 
@@ -14,6 +15,8 @@ export type AppSettings = {
   windows: ScheduleWindow[];
   scanLookbackMonths: ScanLookbackMonths;
   googleAccount: string;
+  remindersOn: boolean;
+  ttiVariantId: TtiVariantId;
 };
 
 const KEYS = {
@@ -26,6 +29,8 @@ const KEYS = {
   schedule: 'llm_schedule',
   lookback: 'scan_lookback_months',
   googleAccount: 'google_account',
+  reminders: 'reminders_on',
+  ttiVariant: 'tti_variant_id',
 } as const;
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -38,6 +43,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   windows: DEFAULT_WINDOWS,
   scanLookbackMonths: 1,
   googleAccount: '',
+  remindersOn: true,
+  ttiVariantId: DEFAULT_TTI_VARIANT,
 };
 
 function asFlag(value: string | null, fallback: boolean): boolean {
@@ -58,6 +65,8 @@ export async function loadAppSettings(): Promise<AppSettings> {
     schedule,
     lookback,
     googleAccount,
+    reminders,
+    ttiVariant,
   ] = await Promise.all([
     getScanMeta(KEYS.offline),
     getScanMeta(KEYS.privacy),
@@ -68,6 +77,8 @@ export async function loadAppSettings(): Promise<AppSettings> {
     getScanMeta(KEYS.schedule),
     getScanMeta(KEYS.lookback),
     getScanMeta(KEYS.googleAccount),
+    getScanMeta(KEYS.reminders),
+    getScanMeta(KEYS.ttiVariant),
   ]);
 
   const lookbackMonths = Number(lookback);
@@ -84,6 +95,8 @@ export async function loadAppSettings(): Promise<AppSettings> {
     windows: parseWindows(schedule),
     scanLookbackMonths,
     googleAccount: googleAccount ?? '',
+    remindersOn: asFlag(reminders, true),
+    ttiVariantId: ttiVariant && isTtiVariantId(ttiVariant) ? ttiVariant : DEFAULT_TTI_VARIANT,
   };
 }
 
@@ -115,6 +128,12 @@ export async function persistSetting<K extends keyof AppSettings>(key: K, value:
       return;
     case 'googleAccount':
       await setScanMeta(KEYS.googleAccount, String(value));
+      return;
+    case 'remindersOn':
+      await setScanMeta(KEYS.reminders, value ? '1' : '0');
+      return;
+    case 'ttiVariantId':
+      await setScanMeta(KEYS.ttiVariant, String(value));
       return;
     default:
       return;

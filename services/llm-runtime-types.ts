@@ -44,11 +44,16 @@ export type LlmRuntime = {
     snapshot: string,
     onProgress: ProgressFn,
     history?: CoachTurn[],
+    onToken?: (text: string) => void,
   ) => Promise<string>;
   acquireCoachSession: (onProgress: ProgressFn) => Promise<void>;
   releaseCoachSession: () => Promise<void>;
+  interruptGeneration: () => void;
   downloadSelectedModel: (onProgress: ProgressFn) => Promise<void>;
+  switchOnDeviceModel: (onProgress: ProgressFn) => Promise<void>;
   unloadFromMemory: () => Promise<boolean>;
+  /** Caller must already hold exclusiveInference. Never nest exclusive. */
+  releaseLlmSlot: () => Promise<void>;
   getRamState: () => LlmRamState;
 };
 
@@ -65,10 +70,15 @@ export function emptyRuntime(): LlmRuntime {
     askCoach: async () => '',
     acquireCoachSession: async () => undefined,
     releaseCoachSession: async () => undefined,
+    interruptGeneration: () => undefined,
     downloadSelectedModel: async () => {
       throw new Error('unavailable');
     },
+    switchOnDeviceModel: async () => {
+      throw new Error('unavailable');
+    },
     unloadFromMemory: async () => false,
+    releaseLlmSlot: async () => undefined,
     getRamState: () => ({ loaded: false }),
   };
 }

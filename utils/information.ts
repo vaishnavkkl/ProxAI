@@ -1,5 +1,6 @@
 import type { LedgerItem } from '@/types/ledger';
 import type { ItemState } from '@/services/database';
+import { localDay, parseLocalDate } from '@/utils/message-date';
 
 function normalized(value = '') { return value.toLowerCase().replace(/\s+/g, ' ').trim(); }
 export function transactionReference(item: LedgerItem): string | null {
@@ -37,6 +38,15 @@ export function informationTitle(item: LedgerItem): string {
   const action = body.match(/\b(submit|send|complete|finish|upload|collect|bring)\b\s+(.+?)(?=\s+(?:by|before|on|at)\b|[.!?\n]|$)/i);
   if (action) return `${action[1][0].toUpperCase()}${action[1].slice(1).toLowerCase()} ${action[2]}`.slice(0, 80);
   return title.replace(/https?:\/\/\S+/gi, '').slice(0, 72) || 'Task to review';
+}
+
+export function isUpcomingPlan(item: LedgerItem, now = new Date()): boolean {
+  if (item.type === 'transaction' || item.type === 'security') return true;
+  if (item.trackingStatus === 'delivered' || item.trackingStatus === 'cancelled') return false;
+  if (item.type !== 'event' && item.type !== 'travel') return true;
+  const parsed = parseLocalDate(item.date ?? '');
+  if (!Number.isFinite(parsed.getTime())) return false;
+  return localDay(parsed) >= localDay(now);
 }
 
 export function isUsefulInformation(item: LedgerItem): boolean {

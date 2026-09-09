@@ -58,7 +58,7 @@ export function isWorthLlm(message: IncomingMessage): boolean {
     DATE_OR_DUE.test(message.body) ||
     TICKET_OR_EVENT.test(message.body) ||
     SUBSCRIPTION.test(message.body)
-    || /\b(task|promise|submit|deadline|delivery|parcel|shipment|warranty|return window|insurance|passport)\b/i.test(message.body)
+    || /\b(task|promise|submit|deadline|delivery|parcel|shipment|warranty|return window|insurance|passport|invoice|receipt)\b/i.test(message.body)
   );
 }
 

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 
 export type ToastKind = 'info' | 'success' | 'error';
+export type WorkKind = 'idle' | 'scan' | 'download';
 
 export type Toast = {
   kind: ToastKind;
@@ -21,6 +22,7 @@ type UiState = {
   llmProgress: number;
   llmLabel: string;
   isProcessing: boolean;
+  workKind: WorkKind;
   toast: Toast;
   memoryUsedMb: number;
   memoryAvailMb: number;
@@ -32,16 +34,24 @@ type UiState = {
   memoryDeviceTotalMb: number;
   memoryDeviceSamples: number[];
   modelInRam: boolean;
+  imageInRam: boolean;
+  imageBusy: boolean;
   selectedLedgerId: string | null;
+  selectedScreenshotId: string | null;
   financeCategory: string | null;
   financeBankId: string | null;
   setProgress: (progress: number, label: string) => void;
   setProcessing: (isProcessing: boolean) => void;
+  setWorkKind: (workKind: WorkKind) => void;
   setToast: (toast: Toast) => void;
   clearToast: () => void;
   setMemory: (snapshot: MemorySnapshot) => void;
+  forceMemory: (snapshot: MemorySnapshot) => void;
   setModelInRam: (modelInRam: boolean) => void;
+  setImageInRam: (imageInRam: boolean) => void;
+  setImageBusy: (imageBusy: boolean) => void;
   setSelectedLedgerId: (selectedLedgerId: string | null) => void;
+  setSelectedScreenshotId: (selectedScreenshotId: string | null) => void;
   setFinanceCategory: (financeCategory: string | null) => void;
   setFinanceBankId: (financeBankId: string | null) => void;
   clearMemory: () => void;
@@ -50,10 +60,30 @@ type UiState = {
 let lastProgressAt = 0;
 let lastMemoryAt = 0;
 
+function applyMemory(set: (partial: Partial<UiState> | ((state: UiState) => Partial<UiState>)) => void, snapshot: MemorySnapshot, immediate: boolean) {
+  const now = Date.now();
+  if (!immediate && now - lastMemoryAt < 250) {
+    return;
+  }
+  lastMemoryAt = now;
+  set((state) => ({
+    memoryUsedMb: snapshot.usedMb,
+    memoryAvailMb: snapshot.availMb,
+    memoryTotalMb: snapshot.totalMb,
+    memoryModelMb: snapshot.modelMb,
+    memoryDiskMb: snapshot.diskMb,
+    memoryDeviceUsedMb: snapshot.deviceUsedMb,
+    memoryDeviceTotalMb: snapshot.deviceTotalMb,
+    memorySamples: [...state.memorySamples, snapshot.usedMb].slice(-40),
+    memoryDeviceSamples: [...state.memoryDeviceSamples, snapshot.deviceUsedMb].slice(-40),
+  }));
+}
+
 export const useUiStore = create<UiState>((set) => ({
   llmProgress: 0,
   llmLabel: '',
   isProcessing: false,
+  workKind: 'idle',
   toast: null,
   memoryUsedMb: 0,
   memoryAvailMb: 0,
@@ -65,7 +95,10 @@ export const useUiStore = create<UiState>((set) => ({
   memoryDeviceTotalMb: 0,
   memoryDeviceSamples: [],
   modelInRam: false,
+  imageInRam: false,
+  imageBusy: false,
   selectedLedgerId: null,
+  selectedScreenshotId: null,
   financeCategory: null,
   financeBankId: null,
   setProgress: (llmProgress, llmLabel) => {
@@ -76,29 +109,24 @@ export const useUiStore = create<UiState>((set) => ({
     lastProgressAt = now;
     set({ llmProgress, llmLabel });
   },
-  setProcessing: (isProcessing) => set({ isProcessing }),
+  setProcessing: (isProcessing) => set((state) => ({
+    isProcessing,
+    workKind: isProcessing ? state.workKind : 'idle',
+  })),
+  setWorkKind: (workKind) => set({ workKind }),
   setToast: (toast) => set({ toast }),
   clearToast: () => set({ toast: null }),
   setMemory: (snapshot) => {
-    const now = Date.now();
-    if (now - lastMemoryAt < 250) {
-      return;
-    }
-    lastMemoryAt = now;
-    set((state) => ({
-      memoryUsedMb: snapshot.usedMb,
-      memoryAvailMb: snapshot.availMb,
-      memoryTotalMb: snapshot.totalMb,
-      memoryModelMb: snapshot.modelMb,
-      memoryDiskMb: snapshot.diskMb,
-      memoryDeviceUsedMb: snapshot.deviceUsedMb,
-      memoryDeviceTotalMb: snapshot.deviceTotalMb,
-      memorySamples: [...state.memorySamples, snapshot.usedMb].slice(-40),
-      memoryDeviceSamples: [...state.memoryDeviceSamples, snapshot.deviceUsedMb].slice(-40),
-    }));
+    applyMemory(set, snapshot, false);
+  },
+  forceMemory: (snapshot) => {
+    applyMemory(set, snapshot, true);
   },
   setModelInRam: (modelInRam) => set({ modelInRam }),
+  setImageInRam: (imageInRam) => set({ imageInRam }),
+  setImageBusy: (imageBusy) => set({ imageBusy }),
   setSelectedLedgerId: (selectedLedgerId) => set({ selectedLedgerId }),
+  setSelectedScreenshotId: (selectedScreenshotId) => set({ selectedScreenshotId }),
   setFinanceCategory: (financeCategory) => set({ financeCategory }),
   setFinanceBankId: (financeBankId) => set({ financeBankId }),
   clearMemory: () => {

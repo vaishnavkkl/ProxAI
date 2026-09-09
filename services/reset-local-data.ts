@@ -1,5 +1,6 @@
 import { clearBudgetTables, clearLedgerTables } from '@/services/database';
 import { useBudgetStore } from '@/store/budget-store';
+import { useCoachStore } from '@/store/coach-store';
 import { useEventStore } from '@/store/event-store';
 import { useLifeStore } from '@/store/life-store';
 import { useProcessedStore } from '@/store/processed-store';
@@ -13,6 +14,8 @@ export async function resetLedgerData() {
   useLifeStore.getState().replaceAll([]);
   useSubscriptionStore.getState().replaceAll([]);
   useProcessedStore.getState().replaceAll([]);
+  useCoachStore.getState().replacePins([]);
+  useCoachStore.getState().startNewChat();
 }
 
 export async function resetBudgetData() {

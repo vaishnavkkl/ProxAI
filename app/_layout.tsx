@@ -1,3 +1,5 @@
+import '@/utils/keep-awake-guard';
+
 import { Inter_400Regular, Inter_500Medium, Inter_600SemiBold } from '@expo-google-fonts/inter';
 import { Poppins_600SemiBold, Poppins_700Bold } from '@expo-google-fonts/poppins';
 import { DefaultTheme, ThemeProvider } from '@react-navigation/native';
@@ -12,11 +14,12 @@ import { LedgerDetailHost } from '@/components/ledger-detail-host';
 import { NotificationToast } from '@/components/notification-toast';
 import { setupExecutorch } from '@/services/executorch-setup';
 import { hydrateApp } from '@/services/hydrate';
+import { setupReminderChannels, subscribeReminderActions, syncPlanReminders } from '@/services/reminders';
 import { colors } from '@/styles';
 
 setupExecutorch();
 
-SplashScreen.preventAutoHideAsync();
+void SplashScreen.preventAutoHideAsync().catch(() => undefined);
 SplashScreen.setOptions({
   duration: 400,
   fade: true,
@@ -52,14 +55,30 @@ export default function RootLayout() {
   const ready = fontsLoaded || fontError != null;
 
   useEffect(() => {
+    if (!hydrated) {
+      return;
+    }
+    const sub = subscribeReminderActions();
+    return () => sub.remove();
+  }, [hydrated]);
+
+  useEffect(() => {
     if (!ready) {
       return;
     }
     void hydrateApp()
       .catch(() => undefined)
+      .then(async () => {
+        try {
+          await setupReminderChannels();
+          await syncPlanReminders();
+        } catch {
+          // Notification native module can be missing during a reload.
+        }
+      })
       .finally(() => {
         setHydrated(true);
-        void SplashScreen.hideAsync();
+        void SplashScreen.hideAsync().catch(() => undefined);
       });
   }, [ready]);
 
@@ -83,14 +102,37 @@ export default function RootLayout() {
             presentation: 'formSheet',
             headerShown: false,
             sheetGrabberVisible: true,
-            sheetAllowedDetents: [0.45, 0.7],
+            sheetAllowedDetents: [1],
+            sheetCornerRadius: 16,
+            gestureEnabled: true,
           }}
         />
         <Stack.Screen
           name="coach"
+          dangerouslySingular
           options={{
-            presentation: 'modal',
+            presentation: 'card',
+            animation: 'slide_from_bottom',
             headerShown: false,
+            gestureEnabled: true,
+          }}
+        />
+        <Stack.Screen
+          name="imagine"
+          options={{
+            presentation: 'card',
+            animation: 'slide_from_bottom',
+            headerShown: false,
+            gestureEnabled: true,
+          }}
+        />
+        <Stack.Screen
+          name="screenshots"
+          options={{
+            presentation: 'card',
+            animation: 'slide_from_right',
+            headerShown: false,
+            gestureEnabled: true,
           }}
         />
       </Stack>

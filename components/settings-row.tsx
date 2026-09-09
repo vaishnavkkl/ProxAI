@@ -14,14 +14,20 @@ type SettingsRowProps = {
   accessory?: ReactNode;
   action?: string;
   expanded?: boolean;
+  tag?: string;
+  tagTone?: 'llm' | 'image';
 };
 
-export function SettingsRow({ icon, title, value, onPress, accessory, action, expanded }: SettingsRowProps) {
+export function SettingsRow({ icon, title, value, onPress, accessory, action, expanded, tag, tagTone = 'llm' }: SettingsRowProps) {
   const body = (
     <Animated.View layout={LinearTransition.duration(180)} style={[styles.row, expanded && styles.expanded]}>
-      <View style={[styles.icon, expanded && styles.iconActive]}><Ionicons name={icon} size={21} color={expanded ? colors.neutral[0] : colors.primary[600]} /></View>
+      <View style={[styles.icon, expanded && styles.iconActive, tagTone === 'image' && !expanded ? styles.iconImage : undefined]}><Ionicons name={icon} size={21} color={expanded ? colors.neutral[0] : tagTone === 'image' ? colors.secondary[600] : colors.primary[600]} /></View>
       <View style={styles.copy}>
-        <View style={styles.titleLine}><AppText variant="labelRegular">{title}</AppText>{expanded ? <Animated.View entering={FadeIn.duration(180)} style={styles.liveDot} /> : null}</View>
+        <View style={styles.titleLine}>
+          <AppText variant="labelRegular">{title}</AppText>
+          {tag ? <AppText style={tagTone === 'image' ? styles.tagImage : styles.tagLlm} variant="overline">{tag}</AppText> : null}
+          {expanded ? <Animated.View entering={FadeIn.duration(180)} style={styles.liveDot} /> : null}
+        </View>
         <AppText variant="bodySmall">{value}</AppText>
       </View>
       {action || expanded !== undefined ? (
@@ -58,8 +64,26 @@ export function SettingsRow({ icon, title, value, onPress, accessory, action, ex
 const styles = StyleSheet.create({
   expanded: { backgroundColor: colors.primary[50], borderColor: colors.primary[100], borderBottomLeftRadius: 0, borderBottomRightRadius: 0, experimental_backgroundImage: 'linear-gradient(120deg, #EFF6FF, #DBEAFE)' },
   icon: { width: 40, height: 40, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primary[50] },
+  iconImage: { backgroundColor: colors.secondary[50] },
   iconActive: { backgroundColor: colors.primary[600] },
-  titleLine: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm }, liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.primary[500] },
+  titleLine: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: spacing.sm },
+  liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.primary[500] },
+  tagLlm: {
+    color: colors.primary[600],
+    backgroundColor: colors.primary[100],
+    overflow: 'hidden',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: borderRadius.sm,
+  },
+  tagImage: {
+    color: colors.secondary[600],
+    backgroundColor: colors.secondary[50],
+    overflow: 'hidden',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: borderRadius.sm,
+  },
   row: {
     flexDirection: 'row',
     alignItems: 'center',

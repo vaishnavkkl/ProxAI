@@ -1,8 +1,11 @@
-import type { FixedExpenseRow } from '@/services/database';
+import type { FixedExpenseRow, ItemState } from '@/services/database';
 import type { LedgerItem } from '@/types/ledger';
 import { detectCoachTopic } from '@/utils/coach-prompts';
 import { listBankAccounts } from '@/utils/bank-account';
 import { formatInr } from '@/utils/format-inr';
+import { formatLedgerWhen } from '@/utils/format-when';
+import { informationTitle } from '@/utils/information';
+import { localDay, parseLocalDate, isWithinUpcomingWindow } from '@/utils/message-date';
 import { monthsLeft } from '@/utils/money-plan';
 import { isInCurrentMonth, summarizeMonth } from '@/utils/month-finance';
 
@@ -63,6 +66,7 @@ export type CoachLedger = {
   expenses: FixedExpenseRow[];
   subscriptions: LedgerItem[];
   events: LedgerItem[];
+  life: LedgerItem[];
 };
 
 function moneyLine(item: LedgerItem): string {
@@ -86,8 +90,45 @@ function takeMonth(items: LedgerItem[], category: 'income' | 'spend', limit: num
     .slice(0, limit);
 }
 
+function lifeLine(item: LedgerItem): string {
+  const day = (item.date ?? '').slice(0, 10) || 'undated';
+  const name = (item.merchant ?? item.type).replace(/\s+/g, ' ').trim().slice(0, 28);
+  return `${item.type} ${day} ${name}`;
+}
+
+function humanLifeLine(item: LedgerItem): string {
+  const title = informationTitle(item).replace(/\s+/g, ' ').trim().slice(0, 42);
+  return item.date ? `${title} · ${formatLedgerWhen(item.date)}` : title;
+}
+
+export function coachOpenLife(items: LedgerItem[], states: Record<string, ItemState>, now = new Date()): LedgerItem[] {
+  return items.filter((item) => {
+    if (item.type === 'transaction') {
+      return false;
+    }
+    if (states[item.id]?.status && states[item.id].status !== 'open') {
+      return false;
+    }
+    if (item.type === 'event' || item.type === 'travel') {
+      return isWithinUpcomingWindow(item.date, now);
+    }
+    if (item.type === 'bill' || item.type === 'subscription' || item.type === 'document' || item.type === 'purchase') {
+      const parsed = parseLocalDate(item.date ?? '');
+      if (!Number.isFinite(parsed.getTime())) {
+        return true;
+      }
+      return localDay(parsed) >= localDay(now);
+    }
+    return true;
+  });
+}
+
+function ofType(items: LedgerItem[], type: LedgerItem['type'], limit: number) {
+  return items.filter((item) => item.type === type).slice(0, limit).map(lifeLine);
+}
+
 export function coachSnapshot(ledger: CoachLedger): string {
-  const { plan, categories, transactions, expenses, subscriptions, events } = ledger;
+  const { plan, categories, transactions, expenses, subscriptions, events, life } = ledger;
   const inflows = plan.salary + plan.income;
   const outflows = plan.fixed + plan.spend;
   const spends = takeMonth(transactions, 'spend', 8).map(moneyLine);
@@ -105,6 +146,11 @@ export function coachSnapshot(ledger: CoachLedger): string {
     const day = (item.date ?? '').slice(0, 10) || 'soon';
     return `${day} ${(item.merchant ?? 'Event').slice(0, 28)}`;
   });
+  const tasks = ofType(life, 'action', 6);
+  const travel = ofType(life, 'travel', 4);
+  const deliveries = ofType(life, 'delivery', 4);
+  const security = ofType(life, 'security', 3);
+  const dueBills = ofType(life, 'bill', 4);
 
   const lines = [
     'Currency: INR rupees. Write ₹ or Rs. Never write $ or USD.',
@@ -152,10 +198,33 @@ export function coachSnapshot(ledger: CoachLedger): string {
   if (upcoming.length > 0) {
     lines.push(`Upcoming events: ${upcoming.join('; ')}`);
   }
+  if (tasks.length > 0) {
+    lines.push(`Tasks: ${tasks.join('; ')}`);
+  }
+  if (travel.length > 0) {
+    lines.push(`Travel: ${travel.join('; ')}`);
+  }
+  if (deliveries.length > 0) {
+    lines.push(`Deliveries: ${deliveries.join('; ')}`);
+  }
+  if (dueBills.length > 0) {
+    lines.push(`Due bills: ${dueBills.join('; ')}`);
+  }
+  if (security.length > 0) {
+    lines.push(`Security to review: ${security.join('; ')}`);
+  }
+  const rest = life
+    .filter((item) => !['action', 'travel', 'delivery', 'bill', 'security', 'transaction'].includes(item.type))
+    .slice(0, 4)
+    .map(lifeLine);
+  if (rest.length > 0) {
+    lines.push(`Other plans: ${rest.join('; ')}`);
+  }
   return lines.join('\n');
 }
 
-export function fallbackCoachReply(plan: SpendPlan, question = ''): string {
+export function fallbackCoachReply(plan: SpendPlan, question = '', life: LedgerItem[] = [], now = new Date()): string {
+  const visible = coachOpenLife(life, {}, now);
   const inflow = plan.salary + plan.income;
   const outflow = plan.fixed + plan.spend;
   const gap = inflow - outflow;
@@ -171,8 +240,24 @@ export function fallbackCoachReply(plan: SpendPlan, question = ''): string {
     plan.saveMonthly > 0
       ? `Park ${formatInr(plan.saveMonthly)} now — about 20% of income after bills.`
       : 'Set paycheck and bills to get a monthly save target.';
+  const agenda =
+    visible.length > 0
+      ? `Coming up: ${visible.slice(0, 4).map(humanLifeLine).join('; ')}.`
+      : 'Nothing upcoming in your plans. Add a task or refresh messages.';
 
   switch (detectCoachTopic(question)) {
+    case 'today':
+    case 'tasks':
+      return [agenda, daily, compare].join('\n');
+    case 'travel':
+    case 'delivery':
+      return [agenda, `You have ${formatInr(plan.remaining)} uncommitted this month.`, save].join('\n');
+    case 'security':
+      return [
+        'Treat unknown links and OTP requests as possible risk, not a confirmed scam.',
+        'Open the official app or a number you already trust. Do not share codes.',
+        agenda,
+      ].join('\n');
     case 'compare':
     case 'income':
       return [compare, daily, cut, save].join('\n');
@@ -199,4 +284,17 @@ export function fallbackCoachReply(plan: SpendPlan, question = ''): string {
     default:
       return [compare, daily, cut, save].join('\n');
   }
+}
+
+export function coachDisplayedReply(reply: string, fallback: string, available: boolean, reason = ''): string {
+  if (reply.trim()) {
+    return reply;
+  }
+  if (!available) {
+    return (
+      reason ||
+      'The on-device model is not on this phone yet. Open Settings, pick a model, and tap Download in the engine sheet.'
+    );
+  }
+  return `I could not get a model reply just now.\n\n${fallback}`;
 }

@@ -25,6 +25,7 @@ function publishMemory(reading: Awaited<ReturnType<typeof readMemory>>) {
 export function useMessageRefresh() {
   const router = useRouter();
   const setProcessing = useUiStore((s) => s.setProcessing);
+  const setWorkKind = useUiStore((s) => s.setWorkKind);
   const setProgress = useUiStore((s) => s.setProgress);
   const setToast = useUiStore((s) => s.setToast);
   const [mailChoices, setMailChoices] = useState<string[] | null>(null);
@@ -77,6 +78,7 @@ export function useMessageRefresh() {
     }
 
     setProcessing(true);
+    setWorkKind('scan');
     setProgress(0.02, 'Scanning this phone…');
     setToast({ kind: 'info', message: 'Scanning SMS, Calendar, and subscription apps…' });
     useUiStore.getState().clearMemory();

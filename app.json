@@ -12,14 +12,19 @@
       "supportsTablet": true,
       "infoPlist": {
         "NSCalendarsUsageDescription": "ProxAI reads upcoming events from calendars on this phone, including Gmail if it is synced here. Nothing is uploaded.",
-        "NSCalendarsFullAccessUsageDescription": "ProxAI reads upcoming events from calendars on this phone, including Gmail if it is synced here. Nothing is uploaded."
+        "NSCalendarsFullAccessUsageDescription": "ProxAI reads upcoming events from calendars on this phone, including Gmail if it is synced here. Nothing is uploaded.",
+        "NSCameraUsageDescription": "ProxAI takes a photo to read text on this phone. Nothing is uploaded.",
+        "NSPhotoLibraryUsageDescription": "ProxAI reads text from photos you choose. Images stay on this phone."
       }
     },
     "android": {
       "permissions": [
         "android.permission.READ_SMS",
         "android.permission.READ_CALENDAR",
-        "android.permission.WRITE_CALENDAR"
+        "android.permission.WRITE_CALENDAR",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.CAMERA",
+        "android.permission.READ_MEDIA_IMAGES"
       ],
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
@@ -29,8 +34,9 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
+      "largeHeap": true,
       "package": "com.yshnav.ProxAI",
-      "softwareKeyboardLayoutMode": "resize"
+      "softwareKeyboardLayoutMode": "pan"
     },
     "web": {
       "output": "static",
@@ -55,6 +61,22 @@
         "expo-calendar",
         {
           "calendarPermission": "ProxAI reads upcoming events from calendars on this phone, including Gmail if it is synced here. Nothing is uploaded."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#2563EB",
+          "defaultChannel": "reminders",
+          "enableBackgroundRemoteNotifications": false
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "ProxAI reads text from photos you choose. Images stay on this phone.",
+          "cameraPermission": "ProxAI takes a photo to read text on this phone. Nothing is uploaded.",
+          "microphonePermission": false
         }
       ]
     ],

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { AppText } from '@/components/app-text';
+import { DateTimeField } from '@/components/date-time-field';
 import { useLifeStore } from '@/store/life-store';
 import type { LedgerItem } from '@/types/ledger';
 import { localDay, parseLocalDate } from '@/utils/message-date';
@@ -42,7 +43,16 @@ export function ItemActions({ item }: { item: LedgerItem }) {
     {item.type === 'security' ? <AppText variant="bodyRegular">This is a possible risk based on message patterns, not a verified scam. Check the sender through an official app or a number you already trust. Links in this message are shown as text.</AppText> : null}
     <AppText variant="labelRegular">Correct this item</AppText>
     <TextInput accessibilityLabel="Item title" value={title} onChangeText={setTitle} style={styles.input} />
-    {item.type !== 'security' ? <><AppText variant="caption">Date / local time · leave blank if unknown</AppText><TextInput accessibilityLabel="Item date and time" autoCapitalize="none" placeholder="YYYY-MM-DD or YYYY-MM-DDTHH:mm" placeholderTextColor={colors.neutral[600]} value={date} onChangeText={setDate} style={styles.input} /></> : null}
+    {item.type !== 'security' ? (
+      <DateTimeField
+        accessibilityLabel="Item date and time"
+        disabled={busy}
+        label="Date / local time · leave blank if unknown"
+        mode="datetime"
+        onChange={setDate}
+        value={date}
+      />
+    ) : null}
     <Pressable accessibilityRole="button" disabled={busy} onPress={() => void save()} style={styles.button}><AppText>Save changes</AppText></Pressable>
     {item.type !== 'security' ? <Pressable accessibilityRole="button" disabled={busy} onPress={() => void reminder()} style={styles.button}><AppText>Add calendar reminder</AppText></Pressable> : null}
     <Pressable accessibilityRole="button" disabled={busy} onPress={() => void run(async () => { await update(item.id, { status: status === 'open' ? (item.type === 'security' ? 'dismissed' : 'done') : 'open' }); setMessage(status === 'open' ? 'Moved to completed. You can reopen it here.' : 'Reopened.'); })} style={styles.button}><AppText>{status !== 'open' ? 'Reopen item' : item.type === 'security' ? 'Dismiss after review' : 'Mark complete'}</AppText></Pressable>

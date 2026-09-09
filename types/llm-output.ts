@@ -10,7 +10,10 @@ export const parsedItemSchema = z.object({
   valid: z.boolean().optional(),
   important: z.enum(['high', 'normal', 'skip']).optional(),
   review: z.string().optional(),
-  sourceId: z.string().optional(),
+  sourceId: z.preprocess(
+    (value) => (value == null || value === '' ? undefined : String(value)),
+    z.string().optional(),
+  ),
   reference: z.string().nullable().optional(),
   location: z.string().nullable().optional(),
 });

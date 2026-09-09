@@ -8,6 +8,8 @@ export type IncomingMessage = {
   body: string;
   date: string;
   receivedAt?: number;
+  sourceKind?: 'screenshot';
+  sourceUri?: string;
 };
 
 const CREDIT_VERB =

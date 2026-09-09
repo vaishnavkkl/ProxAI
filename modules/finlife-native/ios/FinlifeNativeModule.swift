@@ -20,6 +20,34 @@ public class FinlifeNativeModule: Module {
         "availBytes": max(0, total - resident),
         "nativeHeapBytes": resident,
         "javaUsedBytes": 0,
+        "lowMemory": 0,
+        "thresholdBytes": 0,
+        "clearedCacheBytes": 0,
+        "freedJavaBytes": 0,
+        "freedNativeBytes": 0,
+      ]
+    }
+
+    AsyncFunction("releaseAppMemory") { () -> [String: Double] in
+      let total = Double(ProcessInfo.processInfo.physicalMemory)
+      var info = mach_task_basic_info()
+      var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size) / 4
+      let result = withUnsafeMutablePointer(to: &info) { pointer in
+        pointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { rebound in
+          task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), rebound, &count)
+        }
+      }
+      let resident = result == KERN_SUCCESS ? Double(info.resident_size) : 0
+      return [
+        "totalBytes": total,
+        "availBytes": max(0, total - resident),
+        "nativeHeapBytes": resident,
+        "javaUsedBytes": 0,
+        "lowMemory": 0,
+        "thresholdBytes": 0,
+        "clearedCacheBytes": 0,
+        "freedJavaBytes": 0,
+        "freedNativeBytes": 0,
       ]
     }
 

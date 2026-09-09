@@ -55,7 +55,7 @@ export function Subscriptions() {
         <View style={styles.actions}>
           <Pressable accessibilityRole="button" onPress={() => setCapture({ mode: 'renewal', title: '' })} style={styles.primary}><Ionicons name="add" color="white" size={20} /><AppText variant="labelSmall" style={styles.white}>Add renewal</AppText></Pressable>
         </View>
-        <Pressable accessibilityRole="button" onPress={() => router.push('/screenshots')} style={styles.screenshotLink}><Ionicons name="scan-outline" size={21} color={colors.primary[600]} /><View style={styles.copy}><AppText variant="labelRegular">Saved a subscription screenshot?</AppText><AppText variant="caption">Read the details from your gallery</AppText></View><Ionicons name="arrow-forward" size={19} color={colors.primary[600]} /></Pressable>
+        <Pressable accessibilityRole="button" onPress={() => router.push('/screenshots')} style={styles.screenshotLink}><Ionicons name="scan-outline" size={21} color={colors.primary[600]} /><View style={styles.copy}><AppText variant="labelRegular">Saved a subscription screenshot?</AppText><AppText variant="caption">Read the details with Image intelligence</AppText></View><Ionicons name="arrow-forward" size={19} color={colors.primary[600]} /></Pressable>
         <AppText variant="caption" style={styles.muted}>Refresh checks SMS and installed apps. Email notices can be read from screenshots. Your email inbox is not connected.</AppText>
       </View>}
     />

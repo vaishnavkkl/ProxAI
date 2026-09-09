@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { AppState, FlatList, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { AppText } from '@/components/app-text';
 import { MessageCapture } from '@/components/message-capture';
+import { useCoachStore } from '@/store/coach-store';
 import { useLifeStore } from '@/store/life-store';
 import { useEventStore } from '@/store/event-store';
 import { useSubscriptionStore } from '@/store/subscription-store';
@@ -13,7 +14,9 @@ import { relevantEvents } from '@/utils/relevant-events';
 import { confirmedRenewals } from '@/utils/renewals';
 import { agendaGroups, dailyDigest, dashboardHighlights, MODULES } from '@/utils/life-agenda';
 import { formatLedgerWhen } from '@/utils/format-when';
+import { formatCoachTime } from '@/utils/coach-pin';
 import { formatInr } from '@/utils/format-inr';
+import { openCoach } from '@/utils/open-coach';
 import type { LedgerItem } from '@/types/ledger';
 import { regionalHolidays } from '@/utils/regional-holidays';
 
@@ -57,6 +60,8 @@ export function LifeAgenda({ header, footer }: { header?: ReactNode; footer?: Re
   const states = useLifeStore((s) => s.states);
   const events = useEventStore((s) => s.items);
   const subscriptions = useSubscriptionStore((s) => s.items);
+  const pins = useCoachStore((s) => s.pins);
+  const removePin = useCoachStore((s) => s.removePin);
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
@@ -85,10 +90,11 @@ export function LifeAgenda({ header, footer }: { header?: ReactNode; footer?: Re
   const filtered = items.filter((item) => (filter === 'all' || item.type === filter) &&
     [states[item.id]?.title, item.merchant, item.sourceBody, item.reference, item.note].join(' ').toLowerCase().includes(search.toLowerCase()));
   const groups = agendaGroups(filtered, states, now);
-  const highlights = [...all.Important, ...all.Overdue, ...all.Today, ...all.Tomorrow, ...all['Next 7 days']].filter((item) => item.type !== 'transaction');
+  const highlights = [...all.Important, ...all.Overdue.filter((item) => item.type !== 'bill' && item.type !== 'subscription'), ...all.Today, ...all.Tomorrow, ...all['Next 7 days']].filter((item) => item.type !== 'transaction');
   const focused = dashboardHighlights(all);
+  const reviewCount = all.Important.length + all.Overdue.filter((item) => item.type !== 'bill' && item.type !== 'subscription').length;
   const entries: AgendaEntry[] = browseAll ? Object.entries(groups).flatMap(([title, rows]) => {
-    if ((!history && ['History', 'Completed'].includes(title)) || (!rows.length && title !== 'Today')) return [];
+    if ((!history && ['History', 'Completed'].includes(title)) || title === 'History' || (!rows.length && title !== 'Today')) return [];
     return [{ id: `section-${title}`, title, count: rows.length }, ...rows.map((item) => ({ id: item.id, item }))];
   }) : focused.map((item) => ({ id: item.id, item }));
   return (
@@ -107,9 +113,19 @@ export function LifeAgenda({ header, footer }: { header?: ReactNode; footer?: Re
       contentContainerStyle={styles.listContent}
       ListHeaderComponent={<View style={styles.section}>
       {header}
-      <Pressable accessibilityRole="button" accessibilityLabel="Open screenshot intelligence" onPress={() => router.push('/screenshots')} style={styles.screenshotFeature}>
+      <Pressable accessibilityRole="button" accessibilityLabel="Open image intelligence" onPress={() => router.push('/screenshots')} style={styles.screenshotFeature}>
         <View style={styles.screenshotIcon}><Ionicons name="scan" size={29} color={colors.primary[600]} /></View>
-        <View style={styles.copy}><AppText variant="overline" style={styles.blue}>SCREENSHOT INTELLIGENCE</AppText><AppText variant="h4">Saved it? We’ll remember.</AppText><AppText variant="bodySmall" style={styles.muted}>Find bills, bookings & renewals in your screenshots</AppText></View>
+        <View style={styles.copy}><AppText variant="overline" style={styles.blue}>IMAGE INTELLIGENCE</AppText><AppText variant="h4">Saved it? We’ll remember.</AppText><AppText variant="bodySmall" style={styles.muted}>Read bills and bookings from screenshots, gallery, or camera</AppText></View>
+        <Ionicons name="arrow-forward" size={22} color={colors.primary[600]} />
+      </Pressable>
+      <Pressable accessibilityRole="button" accessibilityLabel="Open personal assistant" onPress={openCoach} style={styles.screenshotFeature}>
+        <View style={styles.screenshotIcon}><Ionicons name="chatbubbles-outline" size={29} color={colors.primary[600]} /></View>
+        <View style={styles.copy}><AppText variant="overline" style={styles.blue}>PERSONAL ASSISTANT</AppText><AppText variant="h4">Ask about your day.</AppText><AppText variant="bodySmall" style={styles.muted}>Tasks, travel, deliveries, bills, and money — on this phone</AppText></View>
+        <Ionicons name="arrow-forward" size={22} color={colors.primary[600]} />
+      </Pressable>
+      <Pressable accessibilityRole="button" accessibilityLabel="Open text to image" onPress={() => router.push('/imagine')} style={styles.screenshotFeature}>
+        <View style={styles.screenshotIcon}><Ionicons name="color-palette-outline" size={29} color={colors.primary[600]} /></View>
+        <View style={styles.copy}><AppText variant="overline" style={styles.blue}>TEXT TO IMAGE</AppText><AppText variant="h4">Describe it. Draw it here.</AppText><AppText variant="bodySmall" style={styles.muted}>SDXS 512 DreamShaper on this phone. Not an LLM. The chat model unloads first.</AppText></View>
         <Ionicons name="arrow-forward" size={22} color={colors.primary[600]} />
       </Pressable>
       <View style={styles.digest}>
@@ -117,13 +133,13 @@ export function LifeAgenda({ header, footer }: { header?: ReactNode; footer?: Re
           <Ionicons name="sparkles-outline" size={18} color={colors.primary[100]} />
           <AppText variant="labelRegular" style={styles.onDigest}>Your day at a glance</AppText>
         </View>
-        <AppText variant="h2" style={styles.onDigest}>{all.Important.length + all.Overdue.length ? `${all.Important.length + all.Overdue.length} ${all.Important.length + all.Overdue.length === 1 ? "item" : "items"} to review` : highlights.length ? 'Your next plans, together' : 'You’re all caught up'}</AppText>
+        <AppText variant="h2" style={styles.onDigest}>{reviewCount ? `${reviewCount} ${reviewCount === 1 ? "item" : "items"} to review` : highlights.length ? 'Your next plans, together' : 'You’re all caught up'}</AppText>
         <AppText variant="bodySmall" style={styles.digestMuted}>{all.Today.some((item) => item.type !== 'transaction') ? `Today: ${dailyDigest(all.Today.filter((item) => item.type !== 'transaction'))}` : 'Nothing scheduled for today. Check your upcoming plans below.'}</AppText>
         <View style={styles.briefStats}>
           {[
             { label: 'Today', count: all.Today.filter((item) => item.type !== 'transaction').length },
             { label: 'This week', count: [...all.Tomorrow, ...all['Next 7 days']].filter((item) => item.type !== 'transaction').length },
-            { label: 'To review', count: all.Important.length + all.Overdue.length },
+            { label: 'To review', count: reviewCount },
           ].map((stat) => <View key={stat.label} style={styles.briefStat}><AppText variant="h3" style={styles.onDigest}>{stat.count}</AppText><AppText variant="caption" style={styles.digestMuted}>{stat.label}</AppText></View>)}
         </View>
       </View>
@@ -140,6 +156,31 @@ export function LifeAgenda({ header, footer }: { header?: ReactNode; footer?: Re
           <Ionicons name="add" color={colors.primary[600]} size={20} /><AppText variant="labelSmall" style={styles.blue}>Add</AppText>
         </Pressable>
       </View>
+      {!browseAll && pins.length ? (
+        <View style={styles.pinBlock}>
+          <AppText variant="overline" style={styles.blue}>Pinned from assistant</AppText>
+          {pins.map((pin) => (
+            <View key={pin.id} style={styles.pinRow}>
+              <View style={styles.rowIcon}>
+                <Ionicons color={colors.primary[600]} name="bookmark" size={18} />
+              </View>
+              <View style={styles.copy}>
+                <AppText numberOfLines={2} variant="labelRegular">{pin.summary}</AppText>
+                <AppText variant="caption" style={styles.muted}>{formatCoachTime(pin.at)}</AppText>
+              </View>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Remove pinned summary"
+                onPress={() => {
+                  void removePin(pin.id);
+                }}
+                style={styles.searchButton}>
+                <Ionicons color={colors.neutral[600]} name="close" size={20} />
+              </Pressable>
+            </View>
+          ))}
+        </View>
+      ) : null}
       {searchOpen ? <TextInput accessibilityLabel="Search your agenda" autoFocus placeholder="Search tasks, bookings, merchants…" placeholderTextColor={colors.neutral[600]} value={search} onChangeText={setSearch} style={styles.search} /> : null}
       {browseAll ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.modules} keyboardShouldPersistTaps="handled">
         <Pressable accessibilityRole="button" accessibilityState={{ selected: filter === 'all' }} onPress={() => setFilter('all')} style={filter === 'all' ? styles.selectedChip : styles.chip}><AppText variant="labelSmall" style={filter === 'all' ? styles.onDigest : styles.muted}>All</AppText></Pressable>
@@ -149,7 +190,7 @@ export function LifeAgenda({ header, footer }: { header?: ReactNode; footer?: Re
       ListEmptyComponent={<View style={styles.empty}><Ionicons name="checkmark-circle-outline" size={30} color={colors.primary[600]} /><AppText variant="h4">Nothing needs your attention</AppText><AppText variant="bodySmall" style={styles.muted}>Add a task or refresh your messages. Your next important item will appear here.</AppText></View>}
       ListFooterComponent={<View style={styles.section}>
       {!browseAll ? <Pressable accessibilityRole="button" onPress={() => setBrowseAll(true)} style={styles.historyButton}><AppText variant="labelSmall" style={styles.blue}>{highlights.length > 6 ? `View all ${highlights.length} upcoming items` : 'Explore all tasks, travel & deliveries'}</AppText><Ionicons name="arrow-forward" size={18} color={colors.primary[600]} /></Pressable> : <>
-      <Pressable accessibilityRole="button" accessibilityState={{ expanded: history }} onPress={() => setHistory(!history)} style={styles.historyButton}><Ionicons name="time-outline" size={17} color={colors.neutral[600]} /><AppText variant="labelSmall" style={styles.muted}>{history ? 'Hide' : 'View'} history & completed ({groups.History.length + groups.Completed.length})</AppText><Ionicons name={history ? 'chevron-up' : 'chevron-down'} size={15} color={colors.neutral[600]} /></Pressable>
+      <Pressable accessibilityRole="button" accessibilityState={{ expanded: history }} onPress={() => setHistory(!history)} style={styles.historyButton}><Ionicons name="time-outline" size={17} color={colors.neutral[600]} /><AppText variant="labelSmall" style={styles.muted}>{history ? 'Hide' : 'View'} completed ({groups.Completed.length})</AppText><Ionicons name={history ? 'chevron-up' : 'chevron-down'} size={15} color={colors.neutral[600]} /></Pressable>
       {footer}
       </>}
       </View>}
@@ -193,4 +234,6 @@ const styles = StyleSheet.create({
   warningIcon: { width: 40, height: 40, borderRadius: borderRadius.lg, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.neutral[0] },
   amount: { maxWidth: '30%', color: colors.neutral[900], textAlign: 'right' },
   historyButton: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, marginTop: spacing.lg },
+  pinBlock: { gap: spacing.sm },
+  pinRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.md, paddingHorizontal: spacing.md, borderRadius: borderRadius.lg, backgroundColor: colors.primary[50], borderWidth: 1, borderColor: colors.primary[100] },
 });

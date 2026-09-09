@@ -1,9 +1,13 @@
+import { AppBottomSheet } from '@/components/app-bottom-sheet';
 import Constants from 'expo-constants';
+import { type Href, useRouter } from 'expo-router';
 import { openBrowserAsync, WebBrowserPresentationStyle } from 'expo-web-browser';
 import { useEffect, useState } from 'react';
-import { Alert, Pressable, StyleSheet, Switch, View } from 'react-native';
+import { Pressable, StyleSheet, Switch, View } from 'react-native';
 
+import { AppDialog, type DialogAction } from '@/components/app-dialog';
 import { AppText } from '@/components/app-text';
+import { ImageModelPicker } from '@/components/image-model-picker';
 import { ModelPicker } from '@/components/model-picker';
 import { ScheduleEditor } from '@/components/schedule-editor';
 import { ScreenScaffold } from '@/components/screen-scaffold';
@@ -27,6 +31,14 @@ import {
   hasCachedSources,
 } from '@/services/model-storage';
 import { resetLocalData } from '@/services/reset-local-data';
+import {
+  downloadTextToImage,
+  hasCachedTextToImage,
+  isTextToImageAvailable,
+  disposeTextToImage,
+} from '@/services/text-to-image';
+import { TTI_MODEL_NAME, getTtiVariant } from '@/services/text-to-image-catalog';
+import { requestReminderPermission, syncPlanReminders, clearPlanReminders } from '@/services/reminders';
 import { describeSmsAccess, requestSmsPermission } from '@/services/sms-inbox';
 import { useSettingsStore } from '@/store/settings-store';
 import { useUiStore } from '@/store/ui-store';
@@ -42,9 +54,11 @@ function storageLine() {
 }
 
 export function Settings() {
-  const offlineMode = useSettingsStore((s) => s.offlineMode);
+  const router = useRouter();
   const privacyOn = useSettingsStore((s) => s.privacyOn);
+  const remindersOn = useSettingsStore((s) => s.remindersOn);
   const modelId = useSettingsStore((s) => s.modelId);
+  const ttiVariantId = useSettingsStore((s) => s.ttiVariantId);
   const customModelUrl = useSettingsStore((s) => s.customModelUrl);
   const customTokenizerUrl = useSettingsStore((s) => s.customTokenizerUrl);
   const customTokenizerConfigUrl = useSettingsStore((s) => s.customTokenizerConfigUrl);
@@ -52,11 +66,14 @@ export function Settings() {
   const scanLookbackMonths = useSettingsStore((s) => s.scanLookbackMonths);
   const googleAccount = useSettingsStore((s) => s.googleAccount);
   const setGoogleAccount = useSettingsStore((s) => s.setGoogleAccount);
-  const setOfflineMode = useSettingsStore((s) => s.setOfflineMode);
   const setPrivacyOn = useSettingsStore((s) => s.setPrivacyOn);
+  const setRemindersOn = useSettingsStore((s) => s.setRemindersOn);
   const setScanLookbackMonths = useSettingsStore((s) => s.setScanLookbackMonths);
   const setToast = useUiStore((s) => s.setToast);
   const modelInRam = useUiStore((s) => s.modelInRam);
+  const imageInRam = useUiStore((s) => s.imageInRam);
+  const downloading = useUiStore((s) => s.workKind === 'download' && s.isProcessing);
+  const processing = useUiStore((s) => s.isProcessing);
 
   const [modelStatus, setModelStatus] = useState('Checking on-device model…');
   const [modelPath, setModelPath] = useState('Checking download folder…');
@@ -66,10 +83,13 @@ export function Settings() {
   const [ramLine, setRamLine] = useState('—');
   const [smsLine, setSmsLine] = useState('Checking SMS access…');
   const [showModels, setShowModels] = useState(false);
+  const [showImages, setShowImages] = useState(false);
   const [showSchedule, setShowSchedule] = useState(false);
-  const [isDownloading, setIsDownloading] = useState(false);
+  const [dialog, setDialog] = useState<{ title: string; message: string; actions: DialogAction[] } | null>(null);
 
   const catalog = getCatalogModel(modelId);
+  const ttiVariant = getTtiVariant(ttiVariantId);
+  const ttiCached = hasCachedTextToImage(ttiVariantId);
   const cached = hasCachedSources(
     resolveModelSources({
       modelId,
@@ -130,17 +150,18 @@ export function Settings() {
     return () => {
       active = false;
     };
-  }, [modelId, offlineMode, customModelUrl, customTokenizerUrl, customTokenizerConfigUrl]);
+  }, [modelId, customModelUrl, customTokenizerUrl, customTokenizerConfigUrl]);
 
   function confirmClearDatabase() {
     if (useUiStore.getState().isProcessing) { setToast({ kind: 'info', message: 'Wait for the current scan before clearing data.' }); return; }
-    Alert.alert(
-      'Clear local database?',
-      'For testing. Scanned messages can be read again on Refresh. Model files and Settings stay.',
-      [
-        { text: 'Cancel', style: 'cancel' },
+    setDialog({
+      title: 'Clear local database?',
+      message: 'For testing. Scanned messages can be read again on Refresh. Model files and Settings stay.',
+      actions: [
+        { label: 'Cancel', tone: 'secondary', onPress: () => undefined },
         {
-          text: 'Messages & ledger',
+          label: 'Messages & ledger',
+          tone: 'primary',
           onPress: () => {
             void resetLocalData(false).then(() => {
               setToast({ kind: 'success', message: 'Ledger cleared. Refresh can scan again.' });
@@ -148,8 +169,8 @@ export function Settings() {
           },
         },
         {
-          text: 'Also paycheck & bills',
-          style: 'destructive',
+          label: 'Also paycheck & bills',
+          tone: 'danger',
           onPress: () => {
             void resetLocalData(true).then(() => {
               setToast({ kind: 'success', message: 'Database cleared. Paycheck and bills reset.' });
@@ -157,26 +178,111 @@ export function Settings() {
           },
         },
       ],
-    );
+    });
   }
 
   function confirmClearDownloads() {
     if (useUiStore.getState().isProcessing) { setToast({ kind: 'info', message: 'Wait for the current scan before clearing models.' }); return; }
-    Alert.alert('Remove downloaded models', 'Deletes cached .pte and tokenizer files on this device.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Remove',
-        style: 'destructive',
-        onPress: () => {
-          const removed = clearDownloadedModels();
-          refreshStatus();
-          setToast({
-            kind: removed > 0 ? 'success' : 'info',
-            message: removed > 0 ? `Removed ${removed} files` : 'Download folder is already empty',
-          });
+    setDialog({
+      title: 'Remove downloaded models?',
+      message: 'Deletes language-model and image-model files on this phone to free storage. RAM occupancy is unloaded first.',
+      actions: [
+        { label: 'Cancel', tone: 'secondary', onPress: () => undefined },
+        {
+          label: 'Remove',
+          tone: 'danger',
+          onPress: () => {
+            void (async () => {
+              try {
+                await disposeTextToImage();
+              } catch {
+                // Still delete files if unload failed.
+              }
+              try {
+                await unloadModelFromMemory();
+              } catch {
+                // Still delete files if unload failed.
+              }
+              const removed = clearDownloadedModels();
+              refreshStatus();
+              setToast({
+                kind: removed > 0 ? 'success' : 'info',
+                message: removed > 0 ? `Removed ${removed} files` : 'Download folder is already empty',
+              });
+            })();
+          },
         },
-      },
-    ]);
+      ],
+    });
+  }
+
+  function startDownload() {
+    if (useUiStore.getState().isProcessing) {
+      setToast({ kind: 'info', message: 'Wait for the current scan to finish.' });
+      return;
+    }
+    setShowModels(false);
+    useUiStore.getState().setWorkKind('download');
+    useUiStore.getState().setProcessing(true);
+    useUiStore.getState().setProgress(0.02, 'Starting download…');
+    router.push('/processing' as Href);
+    void downloadSelectedModel((progress, label) => {
+      useUiStore.getState().setProgress(progress, label);
+    })
+      .then(() => {
+        refreshStatus();
+        setToast({
+          kind: 'success',
+          message: 'Model is on this phone. Refresh will not use the internet.',
+        });
+      })
+      .catch(() => {
+        setToast({
+          kind: 'error',
+          message: 'Download failed. Check internet and try again.',
+        });
+      })
+      .finally(() => {
+        useUiStore.getState().setProcessing(false);
+        useUiStore.getState().setProgress(0, '');
+      });
+  }
+
+  function startImageDownload() {
+    if (useUiStore.getState().isProcessing) {
+      setToast({ kind: 'info', message: 'Wait for the current scan to finish.' });
+      return;
+    }
+    if (!isTextToImageAvailable()) {
+      setToast({ kind: 'error', message: 'Needs the Android development build. Expo Go cannot download this model.' });
+      return;
+    }
+    setShowImages(false);
+    useUiStore.getState().setWorkKind('download');
+    useUiStore.getState().setProcessing(true);
+    useUiStore.getState().setProgress(0.02, 'Starting download…');
+    router.push('/processing' as Href);
+    void downloadTextToImage(ttiVariantId, (progress, label) => {
+      useUiStore.getState().setProgress(progress, label);
+    })
+      .then(() => {
+        refreshStatus();
+        setToast({
+          kind: 'success',
+          message: `${TTI_MODEL_NAME} is on this phone. Imagine will not use the internet.`,
+        });
+      })
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : 'Download failed. Check internet and try again.';
+        setToast({
+          kind: message === 'stopped' ? 'info' : 'error',
+          message: message === 'stopped' ? 'Image model download stopped.' : message === 'unavailable' ? 'Needs the Android development build.' : 'Download failed. Check internet and try again.',
+        });
+      })
+      .finally(() => {
+        useUiStore.getState().setProcessing(false);
+        useUiStore.getState().setProgress(0, '');
+      });
   }
 
   return (
@@ -186,27 +292,40 @@ export function Settings() {
       <View style={styles.list}>
         <SettingsRow icon="earth-outline" title="Event region" value="Kerala & India. Regional holidays are filtered; your personal bookings and appointments stay visible." />
         <SettingsRow
-          icon="cloud-offline-outline" title="Offline mode"
+          icon="cloud-offline-outline" title="On this phone"
+          value="SMS, amounts, and inference stay on this device. Download in the engine sheet fetches model files once over HTTPS."
+        />
+
+        <SettingsRow
+          icon="notifications-outline" title="Plan reminders"
           value={
-            offlineMode
-              ? 'On — SMS and amounts never leave this phone. Refresh only uses a model already on disk.'
-              : 'Off — SMS still stays here. You can tap Download model once. Refresh still does not call a server.'
+            remindersOn
+              ? 'On — upcoming events and bills notify with View, Snooze 1h, and Mark done.'
+              : 'Off — no lock-screen reminders. In-app toasts still work.'
           }
           accessory={
             <Switch
-              accessibilityLabel="Offline mode"
+              accessibilityLabel="Plan reminders"
               onValueChange={(value) => {
-                setOfflineMode(value);
-                setToast({
-                  kind: 'info',
-                  message: value
-                    ? 'Refresh stays on this phone. Download is blocked until you turn this off.'
-                    : 'You can download a model once. SMS is still never uploaded.',
+                setRemindersOn(value);
+                if (!value) {
+                  void clearPlanReminders();
+                  setToast({ kind: 'info', message: 'Plan reminders are off.' });
+                  return;
+                }
+                void requestReminderPermission().then((allowed) => {
+                  if (!allowed) {
+                    setRemindersOn(false);
+                    setToast({ kind: 'error', message: 'Notification permission was not granted.' });
+                    return;
+                  }
+                  void syncPlanReminders();
+                  setToast({ kind: 'success', message: 'Reminders use View, Snooze 1h, and Mark done.' });
                 });
               }}
               thumbColor={colors.neutral[0]}
               trackColor={{ false: colors.neutral[400], true: colors.primary[500] }}
-              value={offlineMode}
+              value={remindersOn}
             />
           }
         />
@@ -221,16 +340,21 @@ export function Settings() {
           onPress={
             googleAccount
               ? () => {
-                  Alert.alert('Change Gmail account?', 'The next Refresh will ask which account to scan.', [
-                    { text: 'Cancel', style: 'cancel' },
-                    {
-                      text: 'Ask next time',
-                      onPress: () => {
-                        setGoogleAccount('');
-                        setToast({ kind: 'info', message: 'Pick a Gmail account the next time you tap Refresh.' });
+                  setDialog({
+                    title: 'Change Gmail account?',
+                    message: 'The next Refresh will ask which account to scan.',
+                    actions: [
+                      { label: 'Cancel', tone: 'secondary', onPress: () => undefined },
+                      {
+                        label: 'Ask next time',
+                        tone: 'primary',
+                        onPress: () => {
+                          setGoogleAccount('');
+                          setToast({ kind: 'info', message: 'Pick a Gmail account the next time you tap Refresh.' });
+                        },
                       },
-                    },
-                  ]);
+                    ],
+                  });
                 }
               : undefined
           }
@@ -254,31 +378,109 @@ export function Settings() {
         />
 
         <SettingsRow
-          action={showModels ? 'Hide' : 'Change'}
-          expanded={showModels}
-          icon="sparkles-outline" title="On-device engine"
-          value={`${FINLIFE_LLM.engine} · ${catalog.label}${cached ? ' · cached' : ''}`}
+          action="Edit"
+          icon="sparkles-outline"
+          tag="LLM"
+          title="Language models"
+          value={`${FINLIFE_LLM.engine} · ${catalog.label}${cached ? ' · cached' : ''} · language model for chat and scans`}
           onPress={() => {
-            setShowModels((open) => !open);
+            setShowModels(true);
           }}
         />
-        {showModels ? <View style={styles.expandedPanel}><ModelPicker /></View> : null}
+        <AppBottomSheet
+          accessibilityLabel="Close language model picker"
+          headerRight={
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={cached ? 'Model is on this phone' : 'Download selected model'}
+              disabled={downloading || processing || cached}
+              onPress={() => {
+                startDownload();
+              }}
+              style={[styles.headerDownload, downloading || processing || cached ? styles.headerDownloadOff : undefined]}>
+              <AppText
+                style={downloading || processing || cached ? styles.headerDownloadLabelOff : styles.headerDownloadLabel}
+                variant="labelSmall">
+                {downloading ? 'Downloading…' : cached ? 'On device' : 'Download'}
+              </AppText>
+            </Pressable>
+          }
+          onClose={() => {
+            setShowModels(false);
+          }}
+          title="Language models"
+          visible={showModels}>
+          <ModelPicker />
+        </AppBottomSheet>
 
         <SettingsRow
+          action="Edit"
+          icon="color-palette-outline"
+          tag="Image"
+          tagTone="image"
+          title="Image generation"
+          value={
+            !isTextToImageAvailable()
+              ? `${TTI_MODEL_NAME} needs the Android development build. It is not an LLM.`
+              : `${TTI_MODEL_NAME} · ${ttiVariant.label} · ${formatBytes(ttiVariant.downloadBytes)} · ${ttiCached ? 'on disk' : 'not downloaded'}${imageInRam ? ' · in RAM now' : ''}`
+          }
+          onPress={() => {
+            setShowImages(true);
+          }}
+        />
+        <AppBottomSheet
+          accessibilityLabel="Close image model picker"
+          headerRight={
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={ttiCached ? 'Image model is on this phone' : 'Download selected image model'}
+              disabled={downloading || processing || ttiCached || !isTextToImageAvailable()}
+              onPress={() => {
+                startImageDownload();
+              }}
+              style={[styles.headerDownload, downloading || processing || ttiCached || !isTextToImageAvailable() ? styles.headerDownloadOff : undefined]}>
+              <AppText
+                style={downloading || processing || ttiCached ? styles.headerDownloadLabelOff : styles.headerDownloadLabel}
+                variant="labelSmall">
+                {downloading ? 'Downloading…' : ttiCached ? 'On device' : 'Download'}
+              </AppText>
+            </Pressable>
+          }
+          onClose={() => {
+            setShowImages(false);
+          }}
+          title="Image models"
+          visible={showImages}>
+          <ImageModelPicker onDiskChange={refreshStorage} />
+        </AppBottomSheet>
+        <SettingsRow
+          action="Open"
+          icon="pulse-outline"
+          title="App resources"
+          value="Heap, device RAM, and Free app memory live in the Activity sheet. This app never stops other apps."
+          onPress={() => {
+            router.push('/processing' as Href);
+          }}
+        />
+        <SettingsRow
           action="Recheck"
-          icon="pulse-outline" title="Model status"
+          icon="pulse-outline"
+          tag="LLM"
+          title="Language model status"
           value={modelStatus}
           onPress={() => {
             refreshStatus();
-            setToast({ kind: 'info', message: 'Rechecked model and download folder' });
+            setToast({ kind: 'info', message: 'Rechecked language model and download folder' });
           }}
         />
         <SettingsRow
-          icon="hardware-chip-outline" title="Model in RAM"
+          icon="hardware-chip-outline"
+          tag="LLM"
+          title="Language model in RAM"
           value={
             modelInRam
-              ? 'Loaded — only one copy. Tap Unload to free memory now.'
-              : 'Unloaded. Refresh loads one copy, then frees it.'
+              ? 'LLM loaded — only one native model at a time. Unload here, or open Activity to free this app’s RAM. Other apps are not stopped.'
+              : 'LLM unloaded. Refresh loads one copy, then frees it. Image generation is a separate model above.'
           }
         />
         <Pressable
@@ -295,61 +497,21 @@ export function Settings() {
           }}
           style={[styles.primary, !modelInRam ? styles.primaryOff : undefined]}>
           <AppText style={modelInRam ? styles.primaryLabel : styles.primaryLabelOff} variant="labelLarge">
-            Unload model from memory
+            Unload language model from memory
           </AppText>
         </Pressable>
-        {!cached ? (
-          <Pressable
-            accessibilityRole="button"
-            disabled={isDownloading || offlineMode}
-            onPress={() => {
-              if (offlineMode) {
-                setToast({
-                  kind: 'error',
-                  message: 'Turn Offline mode off to download once, then turn it back on.',
-                });
-                return;
-              }
-              setIsDownloading(true);
-              setToast({ kind: 'info', message: 'Downloading model to this phone…' });
-              void downloadSelectedModel((_progress, label) => {
-                setToast({ kind: 'info', message: label });
-              })
-                .then(() => {
-                  refreshStatus();
-                  setToast({
-                    kind: 'success',
-                    message: 'Model is on this phone. Refresh will not use the internet.',
-                  });
-                })
-                .catch(() => {
-                  setToast({
-                    kind: 'error',
-                    message: 'Download failed. Check internet and try again.',
-                  });
-                })
-                .finally(() => {
-                  setIsDownloading(false);
-                });
-            }}
-            style={[styles.primary, offlineMode || isDownloading ? styles.primaryOff : undefined]}>
-            <AppText
-              style={offlineMode || isDownloading ? styles.primaryLabelOff : styles.primaryLabel}
-              variant="labelLarge">
-              {isDownloading
-                ? 'Downloading…'
-                : offlineMode
-                  ? 'Turn offline off to download'
-                  : 'Download model to this phone'}
-            </AppText>
-          </Pressable>
-        ) : null}
-
         <SettingsRow
           icon="folder-open-outline" title="Download folder"
           value={modelPath}
         />
 
+        <SettingsRow
+          action="Remove"
+          icon="trash-bin-outline"
+          title="Remove downloaded models"
+          value="Deletes language-model and image-model files on this phone to free storage. Chat and Imagine can download them again."
+          onPress={confirmClearDownloads}
+        />
         <SettingsRow
           action="Recheck"
           icon="download-outline" title="Downloaded size"
@@ -404,15 +566,22 @@ export function Settings() {
         />
 
         <SettingsRow
-          action={showSchedule ? 'Hide' : 'Change'}
-          expanded={showSchedule}
+          action="Edit"
           icon="alarm-outline" title="LLM schedule"
           value={formatWindows(windows)}
           onPress={() => {
-            setShowSchedule((open) => !open);
+            setShowSchedule(true);
           }}
         />
-        {showSchedule ? <View style={styles.expandedPanel}><ScheduleEditor /></View> : null}
+        <AppBottomSheet
+          accessibilityLabel="Close LLM schedule"
+          onClose={() => {
+            setShowSchedule(false);
+          }}
+          title="LLM schedule"
+          visible={showSchedule}>
+          <ScheduleEditor />
+        </AppBottomSheet>
 
         <SettingsRow
           icon="shield-checkmark-outline" title="Privacy"
@@ -458,12 +627,20 @@ export function Settings() {
           }}
         />
       </View>
+      <AppDialog
+        visible={dialog != null}
+        title={dialog?.title ?? ''}
+        message={dialog?.message ?? ''}
+        actions={dialog?.actions ?? []}
+        onClose={() => {
+          setDialog(null);
+        }}
+      />
     </ScreenScaffold>
   );
 }
 
 const styles = StyleSheet.create({
-  expandedPanel: { padding: spacing.lg, marginTop: -spacing.sm, borderWidth: 1, borderTopWidth: 0, borderColor: colors.primary[100], backgroundColor: colors.neutral[0], borderBottomLeftRadius: borderRadius.xl, borderBottomRightRadius: borderRadius.xl },
   list: {
     gap: spacing.sm,
   },
@@ -490,5 +667,22 @@ const styles = StyleSheet.create({
   },
   danger: {
     color: colors.semantic.danger,
+  },
+  headerDownload: {
+    minHeight: 48,
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.primary[500],
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerDownloadOff: {
+    backgroundColor: colors.neutral[100],
+  },
+  headerDownloadLabel: {
+    color: colors.neutral[0],
+  },
+  headerDownloadLabelOff: {
+    color: colors.neutral[600],
   },
 });

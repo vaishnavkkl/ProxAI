@@ -1,6 +1,6 @@
 # Mobile OCR and local language models
 
-Research date: 9 September 2026. Target: ProxAI, Expo SDK 54, Android, react-native-executorch 0.9.3. These are integration choices, not a claim that one model wins every mobile benchmark.
+Research date: 9 September 2026. Target: ProxAI, Expo SDK 54, Android, react-native-executorch 0.10.0 (chat, scan, and image generation on the unified 0.10 API). These are integration choices, not a claim that one model wins every mobile benchmark.
 
 ## Decision
 
@@ -32,16 +32,16 @@ Primary model sources: [Qwen2.5](https://huggingface.co/Qwen/Qwen2.5-0.5B-Instru
 
 ### Verified download sizes
 
-HTTP HEAD requests to the official Software Mansion `resolve/v0.9.0` files returned signed-download redirects and these `x-linked-size` values. These are model files only, in decimal bytes; tokenizers are extra. File size is not peak process RAM. No weights were downloaded for this check.
+HTTP HEAD requests to the official Software Mansion `resolve/v0.10.0` files returned signed-download redirects and these `x-linked-size` values. These are model files only, in decimal bytes; tokenizers are extra. File size is not peak process RAM. No weights were downloaded for this check.
 
 | Export | Bytes | Approximate model file |
 |---|---:|---:|
-| [Qwen2.5 0.5B 8da4w](https://huggingface.co/software-mansion/react-native-executorch-qwen-2.5/resolve/v0.9.0/0_5b/xnnpack/qwen_2_5_0_5b_xnnpack_8da4w.pte) | 417,495,168 | 417 MB |
-| [LFM2.5 350M 8da4w](https://huggingface.co/software-mansion/react-native-executorch-lfm-2.5/resolve/v0.9.0/350m/xnnpack/lfm_2_5_350m_xnnpack_8da4w.pte) | 453,885,568 | 454 MB |
-| [SmolLM2 135M 8da4w](https://huggingface.co/software-mansion/react-native-executorch-smolLm-2/resolve/v0.9.0/135m/xnnpack/smollm2_135m_xnnpack_8da4w.pte) | 560,506,880 | 561 MB |
-| [Qwen2.5 1.5B 8da4w](https://huggingface.co/software-mansion/react-native-executorch-qwen-2.5/resolve/v0.9.0/1_5b/xnnpack/qwen_2_5_1_5b_xnnpack_8da4w.pte) | 1,136,177,792 | 1.14 GB |
-| [SmolLM2 360M 8da4w](https://huggingface.co/software-mansion/react-native-executorch-smolLm-2/resolve/v0.9.0/360m/xnnpack/smollm2_360m_xnnpack_8da4w.pte) | 1,363,730,688 | 1.36 GB |
-| [Qwen3.5 0.8B 8da4w](https://huggingface.co/software-mansion/react-native-executorch-qwen-3.5/resolve/v0.9.0/0_8b/xnnpack/qwen_3_5_0_8b_xnnpack_8da4w.pte) | 1,412,986,112 | 1.41 GB |
+| [Qwen2.5 0.5B 8da4w](https://huggingface.co/software-mansion/react-native-executorch-qwen-2.5/resolve/v0.10.0/0_5b/xnnpack/qwen_2_5_0_5b_xnnpack_8da4w.pte) | 417,495,168 | 417 MB |
+| [LFM2.5 350M 8da4w](https://huggingface.co/software-mansion/react-native-executorch-lfm-2.5/resolve/v0.10.0/350m/xnnpack/lfm_2_5_350m_xnnpack_8da4w.pte) | 453,885,568 | 454 MB |
+| [SmolLM2 135M 8da8w](https://huggingface.co/software-mansion/react-native-executorch-smolLm-2/resolve/v0.10.0/135m/xnnpack/smollm2_135m_xnnpack_8da8w.pte) | 560,506,880 | 561 MB |
+| [Qwen2.5 1.5B 8da4w](https://huggingface.co/software-mansion/react-native-executorch-qwen-2.5/resolve/v0.10.0/1_5b/xnnpack/qwen_2_5_1_5b_xnnpack_8da4w.pte) | 1,136,177,792 | 1.14 GB |
+| [SmolLM2 360M 8da8w](https://huggingface.co/software-mansion/react-native-executorch-smolLm-2/resolve/v0.10.0/360m/xnnpack/smollm2_360m_xnnpack_8da8w.pte) | 1,363,730,688 | 1.36 GB |
+| [Qwen3.5 0.8B 8da4w](https://huggingface.co/software-mansion/react-native-executorch-qwen-3.5/resolve/v0.10.0/0_8b/xnnpack/qwen_3_5_0_8b_xnnpack_8da4w.pte) | 1,412,986,112 | 1.41 GB |
 
 The old 80–200 MB model hints and 150–300 MB RAM claims were unsupported and have been removed. `performance.md` contains targets, not measured proof: none of these downloads meets its approximately 300-MB download target. Existing functionality is retained. The new advanced option is available for development evaluation, not certified against that performance contract. Production release still needs device profiling, including first-token latency, peak PSS, battery use, valid JSON rate, category accuracy and exact amount/date accuracy on a fixed consented dataset. No phone inference benchmark for the new model is claimed.
 

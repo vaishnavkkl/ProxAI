@@ -4,6 +4,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export function KeyboardScreen({ children }: { children: ReactNode }) {
   const insets = useSafeAreaInsets();
-  return <KeyboardAvoidingView style={styles.fill} behavior={process.env.EXPO_OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={insets.top}>{children}</KeyboardAvoidingView>;
+  return (
+    <KeyboardAvoidingView
+      style={styles.fill}
+      behavior={process.env.EXPO_OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={insets.top}>
+      {children}
+    </KeyboardAvoidingView>
+  );
 }
+
 const styles = StyleSheet.create({ fill: { flex: 1 } });

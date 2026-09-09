@@ -3,6 +3,7 @@ import * as SQLite from 'expo-sqlite';
 import type { LedgerItem } from '@/types/ledger';
 import { isLifeItem } from '@/types/ledger';
 import { withAccount } from '@/utils/bank-account';
+import type { CoachPin } from '@/utils/coach-pin';
 
 export type LedgerRow = {
   id: string;
@@ -141,6 +142,11 @@ async function openDb() {
       payload TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_screenshot_date ON screenshot_scans(captured_at);
+
+    CREATE TABLE IF NOT EXISTS coach_pins (
+      id TEXT PRIMARY KEY NOT NULL,
+      payload TEXT NOT NULL
+    );
 
     CREATE TABLE IF NOT EXISTS monthly_salary (
       id TEXT PRIMARY KEY NOT NULL,
@@ -475,6 +481,7 @@ export async function clearLedgerTables() {
     DELETE FROM processed_messages;
     DELETE FROM extraction_cache;
     DELETE FROM screenshot_scans;
+    DELETE FROM coach_pins;
     DELETE FROM scan_meta WHERE key IN (
       'last_received_at',
       'last_scan_at',
@@ -520,6 +527,44 @@ export async function loadItemStates(): Promise<Record<string, ItemState>> {
 export async function saveItemState(id: string, state: ItemState) {
   const db = await getDb();
   await db.runAsync('INSERT OR REPLACE INTO item_states (id, payload) VALUES (?, ?)', [id, JSON.stringify(state)]);
+}
+
+function parseCoachPin(payload: string, id: string): CoachPin | null {
+  try {
+    const parsed = JSON.parse(payload) as CoachPin;
+    if (!parsed.summary || !parsed.messageId) {
+      return null;
+    }
+    return {
+      id: parsed.id || id,
+      messageId: parsed.messageId,
+      summary: parsed.summary,
+      at: Number(parsed.at) || 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function loadCoachPins(): Promise<CoachPin[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<{ id: string; payload: string }>('SELECT id, payload FROM coach_pins');
+  return rows
+    .flatMap((row) => {
+      const pin = parseCoachPin(row.payload, row.id);
+      return pin ? [pin] : [];
+    })
+    .sort((a, b) => b.at - a.at);
+}
+
+export async function saveCoachPin(pin: CoachPin) {
+  const db = await getDb();
+  await db.runAsync('INSERT OR REPLACE INTO coach_pins (id, payload) VALUES (?, ?)', [pin.id, JSON.stringify(pin)]);
+}
+
+export async function deleteCoachPin(id: string) {
+  const db = await getDb();
+  await db.runAsync('DELETE FROM coach_pins WHERE id = ?', [id]);
 }
 
 export async function clearBudgetTables() {

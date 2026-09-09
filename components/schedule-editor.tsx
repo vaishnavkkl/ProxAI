@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/app-text';
+import { DateTimeField } from '@/components/date-time-field';
 import { formatWindows, isClockTime, type ScheduleWindow } from '@/services/llm-schedule';
 import { useSettingsStore } from '@/store/settings-store';
 import { useUiStore } from '@/store/ui-store';
@@ -19,7 +20,7 @@ export function ScheduleEditor() {
 
   function save() {
     if (draft.some((item) => !isClockTime(item.start) || !isClockTime(item.end))) {
-      setToast({ kind: 'error', message: 'Use 24-hour times like 06:00' });
+      setToast({ kind: 'error', message: 'Pick a start and end time for each window' });
       return;
     }
     setWindows(draft);
@@ -31,26 +32,26 @@ export function ScheduleEditor() {
       <AppText variant="h4">Edit schedule</AppText>
       <AppText variant="bodySmall">Background inference uses these windows. Refresh always runs.</AppText>
       {draft.map((item, index) => (
-        <View key={`window-${index}`} style={styles.row}>
-          <TextInput
+        <View key={`window-${index}`} style={styles.window}>
+          <AppText variant="labelRegular">Window {index + 1}</AppText>
+          <DateTimeField
             accessibilityLabel={`Window ${index + 1} start`}
-            onChangeText={(value) => {
+            label="Starts"
+            mode="time"
+            onChange={(value) => {
               update(index, 'start', value);
             }}
-            placeholder="06:00"
-            placeholderTextColor={colors.neutral[500]}
-            style={styles.input}
+            optional={false}
             value={item.start}
           />
-          <AppText variant="bodySmall">to</AppText>
-          <TextInput
+          <DateTimeField
             accessibilityLabel={`Window ${index + 1} end`}
-            onChangeText={(value) => {
+            label="Ends"
+            mode="time"
+            onChange={(value) => {
               update(index, 'end', value);
             }}
-            placeholder="09:00"
-            placeholderTextColor={colors.neutral[500]}
-            style={styles.input}
+            optional={false}
             value={item.end}
           />
         </View>
@@ -68,21 +69,13 @@ const styles = StyleSheet.create({
   block: {
     gap: spacing.sm,
   },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  window: {
     gap: spacing.sm,
-  },
-  input: {
-    flex: 1,
-    height: 48,
+    padding: spacing.md,
     borderWidth: 1,
-    borderColor: colors.neutral[400],
-    borderRadius: borderRadius.md,
+    borderColor: colors.neutral[200],
+    borderRadius: borderRadius.lg,
     backgroundColor: colors.neutral[0],
-    paddingHorizontal: spacing.md,
-    color: colors.neutral[900],
-    fontSize: 14,
   },
   primary: {
     height: 48,

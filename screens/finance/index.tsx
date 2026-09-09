@@ -1,23 +1,23 @@
-import { KeyboardScreen } from '@/components/keyboard-screen';
+import { AppBottomSheet } from '@/components/app-bottom-sheet';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { type Href, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { FlatList, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { FlatList, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/app-text';
 import { FinanceAnalysis } from '@/components/finance-analysis';
 import { LedgerRow } from '@/components/ledger-row';
 import { MoneyPlan } from '@/components/money-plan';
 import { ScreenScaffold } from '@/components/screen-scaffold';
+import { SectionHero } from '@/components/section-hero';
 import { useTransactionStore } from '@/store/transaction-store';
 import { useUiStore } from '@/store/ui-store';
-import { borderRadius, colors, layout, spacing } from '@/styles';
+import { borderRadius, colors, spacing } from '@/styles';
 import type { LedgerItem } from '@/types/ledger';
 import { inBankAccount, listBankAccounts } from '@/utils/bank-account';
 import { formatInr } from '@/utils/format-inr';
 import { CATEGORY_LABELS } from '@/utils/month-finance';
 import { sortLedgerItems, type LedgerSort } from '@/utils/sort-ledger';
+import { openCoach } from '@/utils/open-coach';
 
 function keyExtractor(item: LedgerItem) {
   return item.id.replace(/:/g, '|');
@@ -44,7 +44,6 @@ function FinanceHeader({
   flow: 'all' | 'debit' | 'credit';
   onFlow: (flow: 'all' | 'debit' | 'credit') => void;
 }) {
-  const router = useRouter();
   const items = useTransactionStore((s) => s.financeItems);
   const bankId = useUiStore((s) => s.financeBankId);
   const setFinanceBankId = useUiStore((s) => s.setFinanceBankId);
@@ -53,36 +52,41 @@ function FinanceHeader({
 
   return (
     <View style={styles.header}>
-      <View style={styles.titleRow}>
-        <View style={styles.titleCopy}>
-          <AppText variant="overline">
-            {accounts.length > 0
-              ? `${accounts.length} bank${accounts.length === 1 ? '' : 's'}`
-              : 'Finance'}
-          </AppText>
-          <AppText variant="h2">
-            {selected?.label ?? (category ? CATEGORY_LABELS[category] ?? category : 'All accounts')}
+      <SectionHero
+        icon="wallet-outline"
+        subtitle={selected ? selected.label : 'This month on this phone'}
+        title="Your money"
+      />
+      <View style={styles.tools}>
+        <View style={styles.copy}>
+          <AppText variant="h4">{accounts.length > 0 ? `${accounts.length} bank${accounts.length === 1 ? '' : 's'}` : 'All accounts'}</AppText>
+          <AppText style={styles.muted} variant="caption">
+            {category ? CATEGORY_LABELS[category] ?? category : 'Credits, debits, and paycheck'}
           </AppText>
         </View>
         <Pressable
+          accessibilityLabel="Ask your personal assistant"
           accessibilityRole="button"
-          accessibilityLabel="Ask the money coach"
-          onPress={() => {
-            router.push('/coach' as Href);
-          }}
-          style={styles.iconBtn}>
-          <Ionicons color={colors.primary[500]} name="chatbubble-ellipses-outline" size={22} />
+          onPress={openCoach}
+          style={styles.toolBtn}>
+          <Ionicons color={colors.primary[600]} name="chatbubbles-outline" size={18} />
+          <AppText style={styles.blue} variant="labelSmall">
+            Ask
+          </AppText>
         </Pressable>
         <Pressable
-          accessibilityRole="button"
           accessibilityLabel="Paycheck and bills"
+          accessibilityRole="button"
           onPress={onOpenPlan}
-          style={styles.iconBtn}>
-          <Ionicons color={colors.primary[500]} name="options-outline" size={22} />
+          style={styles.toolBtn}>
+          <Ionicons color={colors.primary[600]} name="options-outline" size={18} />
+          <AppText style={styles.blue} variant="labelSmall">
+            Paycheck
+          </AppText>
         </Pressable>
       </View>
       {accounts.length > 0 ? (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.banks}>
+        <ScrollView contentContainerStyle={styles.banks} horizontal showsHorizontalScrollIndicator={false}>
           <Pressable
             accessibilityRole="button"
             accessibilityState={{ selected: !bankId }}
@@ -90,7 +94,7 @@ function FinanceHeader({
               setFinanceBankId(null);
             }}
             style={[styles.bankChip, !bankId ? styles.bankChipOn : undefined]}>
-            <AppText style={!bankId ? styles.bankLabelOn : undefined} variant="labelSmall">
+            <AppText style={!bankId ? styles.blue : styles.muted} variant="labelSmall">
               Consolidated
             </AppText>
           </Pressable>
@@ -98,15 +102,15 @@ function FinanceHeader({
             const on = bankId === account.id;
             return (
               <Pressable
-                accessibilityRole="button"
                 accessibilityLabel={`${account.label}, income ${formatInr(account.income)}, spend ${formatInr(account.spend)}`}
+                accessibilityRole="button"
                 accessibilityState={{ selected: on }}
                 key={account.id}
                 onPress={() => {
                   setFinanceBankId(on ? null : account.id);
                 }}
                 style={[styles.bankChip, on ? styles.bankChipOn : undefined]}>
-                <AppText style={on ? styles.bankLabelOn : undefined} variant="labelSmall">
+                <AppText style={on ? styles.blue : styles.muted} variant="labelSmall">
                   {account.label}
                 </AppText>
               </Pressable>
@@ -116,18 +120,33 @@ function FinanceHeader({
       ) : null}
       {category ? (
         <Pressable
-          accessibilityRole="button"
           accessibilityLabel="Show all categories"
+          accessibilityRole="button"
           onPress={onClearCategory}
           style={styles.filterChip}>
           <AppText variant="labelSmall">Showing {CATEGORY_LABELS[category] ?? category}</AppText>
-          <AppText style={styles.filterClear} variant="labelSmall">
+          <AppText style={styles.blue} variant="labelSmall">
             Clear
           </AppText>
         </Pressable>
       ) : null}
       <FinanceAnalysis onSort={onSort} sort={sort} />
-      <View style={styles.flowTabs}>{(['all', 'debit', 'credit'] as const).map((value) => <Pressable key={value} accessibilityRole="button" accessibilityState={{ selected: flow === value }} onPress={() => onFlow(value)} style={[styles.flowTab, flow === value && styles.flowOn]}><AppText variant="labelSmall" style={flow === value ? styles.bankLabelOn : undefined}>{value === 'all' ? 'All transactions' : value === 'debit' ? 'Debited' : 'Credited'}</AppText></Pressable>)}</View>
+      <View style={styles.filters}>
+        {(['all', 'debit', 'credit'] as const).map((value) => (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ selected: flow === value }}
+            key={value}
+            onPress={() => {
+              onFlow(value);
+            }}
+            style={[styles.filter, flow === value && styles.filterOn]}>
+            <AppText style={flow === value ? styles.blue : styles.muted} variant="labelSmall">
+              {value === 'all' ? 'All' : value === 'debit' ? 'Debited' : 'Credited'}
+            </AppText>
+          </Pressable>
+        ))}
+      </View>
     </View>
   );
 }
@@ -135,12 +154,10 @@ function FinanceHeader({
 function EmptyFinance() {
   return (
     <View style={styles.empty}>
-      <View style={styles.iconWrap}>
-        <Ionicons color={colors.primary[600]} name="receipt-outline" size={28} />
-      </View>
+      <Ionicons color={colors.primary[500]} name="receipt-outline" size={32} />
       <AppText variant="h4">No transactions to show</AppText>
-      <AppText style={styles.copy} variant="bodyRegular">
-        Refresh reads your bank alerts. Try another account or transaction filter to see more.
+      <AppText style={styles.emptyCopy} variant="bodySmall">
+        Refresh reads your bank alerts. Try another account or filter to see more.
       </AppText>
     </View>
   );
@@ -173,95 +190,77 @@ export function Finance() {
     <ScreenScaffold scroll={false}>
       <FlatList
         contentContainerStyle={styles.list}
-        style={styles.listFill}
         data={data}
-        extraData={`${sort}:${category ?? ''}:${bankId ?? ''}`}
+        extraData={`${sort}:${category ?? ''}:${bankId ?? ''}:${flow}`}
         keyExtractor={keyExtractor}
         ListEmptyComponent={EmptyFinance}
         ListHeaderComponent={
           <FinanceHeader
-            onOpenPlan={() => {
-              setPlanOpen(true);
-            }}
+            category={category}
+            flow={flow}
             onClearCategory={() => {
               setFinanceCategory(null);
             }}
+            onFlow={setFlow}
+            onOpenPlan={() => {
+              setPlanOpen(true);
+            }}
             onSort={setSort}
             sort={sort}
-            category={category}
-            flow={flow}
-            onFlow={setFlow}
           />
         }
         renderItem={renderTransaction}
         showsVerticalScrollIndicator={false}
+        style={styles.listFill}
       />
-      <Modal
-        animationType="slide"
-        onRequestClose={() => {
+      <AppBottomSheet
+        accessibilityLabel="Close money plan"
+        onClose={() => {
           setPlanOpen(false);
         }}
+        title="Paycheck and bills"
         visible={planOpen}>
-        <SafeAreaView edges={['top']} style={styles.sheet}>
-        <KeyboardScreen>
-          <View style={styles.sheetBar}>
-            <AppText variant="h3">Paycheck and bills</AppText>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Close money plan"
-              onPress={() => {
-                setPlanOpen(false);
-              }}
-              style={styles.iconBtn}>
-              <Ionicons color={colors.neutral[900]} name="close" size={22} />
-            </Pressable>
-          </View>
-          <ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={styles.sheetBody} showsVerticalScrollIndicator={false}>
-            <MoneyPlan />
-          </ScrollView>
-        </KeyboardScreen>
-      </SafeAreaView>
-      </Modal>
+        <MoneyPlan />
+      </AppBottomSheet>
     </ScreenScaffold>
   );
 }
 
 const styles = StyleSheet.create({
-  flowTabs: { flexDirection: 'row', padding: spacing.xs, backgroundColor: colors.neutral[200], borderRadius: borderRadius.lg },
-  flowTab: { flex: 1, minHeight: 48, alignItems: 'center', justifyContent: 'center', borderRadius: borderRadius.md }, flowOn: { backgroundColor: colors.neutral[0] },
   listFill: {
     flex: 1,
   },
   list: {
-    gap: spacing.md,
     flexGrow: 1,
-    paddingBottom: 0,
+    paddingBottom: spacing['2xl'],
   },
   header: {
     gap: spacing.lg,
   },
-  titleRow: {
+  tools: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
   },
-  titleCopy: {
+  copy: {
     flex: 1,
+    minWidth: 0,
     gap: spacing.xs,
   },
-  filterChip: {
+  muted: {
+    color: colors.neutral[600],
+  },
+  blue: {
+    color: colors.primary[600],
+  },
+  toolBtn: {
+    minHeight: 48,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    minHeight: 48,
-    paddingHorizontal: spacing.lg,
-    borderRadius: borderRadius.md,
-    borderWidth: 1,
-    borderColor: colors.neutral[400],
-    backgroundColor: colors.neutral[100],
-  },
-  filterClear: {
-    color: colors.primary[500],
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.full,
+    backgroundColor: colors.primary[50],
   },
   banks: {
     flexDirection: 'row',
@@ -272,60 +271,49 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     borderRadius: borderRadius.full,
     borderWidth: 1,
-    borderColor: colors.neutral[400],
+    borderColor: colors.neutral[200],
     backgroundColor: colors.neutral[0],
     justifyContent: 'center',
   },
   bankChipOn: {
-    borderColor: colors.primary[500],
-    backgroundColor: colors.primary[100],
+    borderColor: colors.primary[100],
+    backgroundColor: colors.primary[50],
   },
-  bankLabelOn: {
-    color: colors.primary[500],
-  },
-  iconBtn: {
-    width: layout.touchTarget,
-    height: layout.touchTarget,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: borderRadius.md,
-    backgroundColor: colors.primary[100],
-  },
-  empty: {
-    alignItems: 'center',
-    backgroundColor: colors.neutral[0],
-    boxShadow: '0px 1px 3px rgba(0,0,0,0.06)',
-    borderWidth: 1,
-    borderColor: colors.neutral[200],
-    borderRadius: borderRadius.lg,
-    padding: spacing['2xl'],
-    gap: spacing.sm,
-  },
-  iconWrap: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: 48,
-    height: 48,
-    borderRadius: borderRadius.md,
-    backgroundColor: colors.primary[100],
-    marginBottom: spacing.xs,
-  },
-  copy: {
-    textAlign: 'center',
-  },
-  sheet: {
-    flex: 1,
-    backgroundColor: colors.neutral[50],
-  },
-  sheetBar: {
+  filterChip: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    minHeight: 48,
     paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
+    borderRadius: borderRadius.xl,
+    borderWidth: 1,
+    borderColor: colors.neutral[200],
+    backgroundColor: colors.neutral[0],
   },
-  sheetBody: {
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing['3xl'],
+  filters: {
+    flexDirection: 'row',
+    padding: spacing.xs,
+    borderRadius: borderRadius.lg,
+    backgroundColor: colors.neutral[200],
+  },
+  filter: {
+    minHeight: 48,
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: borderRadius.md,
+  },
+  filterOn: {
+    backgroundColor: colors.neutral[0],
+  },
+  empty: {
+    padding: spacing.xl,
+    gap: spacing.md,
+    marginTop: spacing.lg,
+    borderRadius: borderRadius.xl,
+    backgroundColor: colors.neutral[0],
+  },
+  emptyCopy: {
+    color: colors.neutral[600],
   },
 });

@@ -1,7 +1,7 @@
 import type { LedgerItem } from '@/types/ledger';
 import type { ItemState } from '@/services/database';
 import { effectiveItem } from '@/utils/life-agenda';
-import { localDay, parseLocalDate } from '@/utils/message-date';
+import { isWithinUpcomingWindow } from '@/utils/message-date';
 import { holidayIdentity } from '@/utils/regional-holidays';
 import { deduplicateInformation } from '@/utils/information';
 
@@ -37,8 +37,7 @@ export function relevantEvents(items: LedgerItem[], states: Record<string, ItemS
   const seen = new Set<string>();
   return deduplicateInformation(items, states).map((item) => effectiveItem(normalizeEvent(item), states))
     .sort((a, b) => Number(!!states[b.id]) - Number(!!states[a.id])).filter((item) => {
-    const date = parseLocalDate(item.date ?? '');
-    if (!Number.isFinite(date.getTime()) || localDay(date) < localDay(now) || !isRelevantEvent(item)) return false;
+    if (!isWithinUpcomingWindow(item.date, now) || !isRelevantEvent(item)) return false;
     const key = `${isHolidayEvent(item) ? holidayIdentity(item.merchant ?? '') : (item.merchant ?? '').trim().toLowerCase()}|${item.date}|${isHolidayEvent(item) ? 'holiday' : item.location ?? ''}`;
     if (seen.has(key)) return false;
     seen.add(key);

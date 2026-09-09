@@ -1,32 +1,39 @@
 import type { ReactNode } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { colors, layout, spacing } from '@/styles';
 import { KeyboardScreen } from '@/components/keyboard-screen';
+import { colors, layout, spacing } from '@/styles';
+import { bottomSafeInset } from '@/utils/safe-area';
 
 type ScreenScaffoldProps = {
   children: ReactNode;
   scroll?: boolean;
+  /** Extra bottom inset for stack screens. Tab screens already clear the nav bar via the tab bar. */
+  stack?: boolean;
 };
 
-export function ScreenScaffold({ children, scroll = true }: ScreenScaffoldProps) {
+export function ScreenScaffold({ children, scroll = true, stack = false }: ScreenScaffoldProps) {
+  const insets = useSafeAreaInsets();
+  const bottom = spacing['2xl'] + (stack ? bottomSafeInset(insets.bottom) : 0);
   const body = <View style={[styles.content, scroll ? undefined : styles.contentFill]}>{children}</View>;
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <SafeAreaView edges={['top']} style={styles.safe}>
       <KeyboardScreen>
-      {scroll ? (
-        <ScrollView
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}>
-          {body}
-        </ScrollView>
-      ) : (
-        <View style={styles.static}>{body}</View>
-      )}
+        {scroll ? (
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            contentContainerStyle={[styles.scrollContent, { paddingBottom: bottom }]}
+            showsVerticalScrollIndicator={false}>
+            {body}
+          </ScrollView>
+        ) : (
+          <View style={[styles.static, stack ? { paddingBottom: bottomSafeInset(insets.bottom) } : undefined]}>
+            {body}
+          </View>
+        )}
       </KeyboardScreen>
     </SafeAreaView>
   );

@@ -8,6 +8,25 @@ export function parseLocalDate(value: string): Date {
   return new Date(/^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00:00` : value);
 }
 
+export const UPCOMING_EVENT_MONTHS = 2;
+
+export function upcomingDayLimit(now = new Date(), months = UPCOMING_EVENT_MONTHS): string {
+  return localDay(new Date(now.getFullYear(), now.getMonth() + months, now.getDate()));
+}
+
+export function isWithinUpcomingWindow(
+  value: string | null | undefined,
+  now = new Date(),
+  months = UPCOMING_EVENT_MONTHS,
+): boolean {
+  const parsed = parseLocalDate(value ?? '');
+  if (!Number.isFinite(parsed.getTime())) {
+    return false;
+  }
+  const day = localDay(parsed);
+  return day >= localDay(now) && day <= upcomingDayLimit(now, months);
+}
+
 // Resolve relative dates against receipt time, never the day an old SMS is scanned.
 // A missing or invalid date stays unknown instead of becoming a fabricated deadline.
 export function extractMessageDate(body: string, received: string | number): string | null {

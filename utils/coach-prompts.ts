@@ -3,6 +3,11 @@ import { formatInr } from '@/utils/format-inr';
 
 export type CoachTopic =
   | 'start'
+  | 'today'
+  | 'tasks'
+  | 'travel'
+  | 'delivery'
+  | 'security'
   | 'compare'
   | 'spend'
   | 'daily'
@@ -14,13 +19,28 @@ export type CoachTopic =
 
 export function detectCoachTopic(text: string): CoachTopic {
   const question = text.toLowerCase();
+  if (/\b(agenda|what('s| is) on|my day|today('s)? (plan|task|event|list))\b/.test(question)) {
+    return 'today';
+  }
+  if (/\b(task|to-?do|still need me|overdue)\b/.test(question)) {
+    return 'tasks';
+  }
+  if (/\b(travel|flight|hotel|pnr|train|ticket)\b/.test(question)) {
+    return 'travel';
+  }
+  if (/\b(deliver|package|shipment|courier)\b/.test(question)) {
+    return 'delivery';
+  }
+  if (/\b(scam|phish|otp|security|suspicious)\b/.test(question)) {
+    return 'security';
+  }
   if (/\b(compare|income vs|versus|left after|paycheck vs)\b/.test(question)) {
     return 'compare';
   }
   if (/\b(save|saving|set aside|target)\b/.test(question)) {
     return 'save';
   }
-  if (/\b(each day|daily|per day|today|safe cap)\b/.test(question)) {
+  if (/\b(each day|daily|per day|safe cap|spend today)\b/.test(question)) {
     return 'daily';
   }
   if (/\b(overspend|cut|why is|so high|where am i|dining|grocery)\b/.test(question)) {
@@ -60,10 +80,10 @@ function uniquePrompts(prompts: string[], hide: string | null): string[] {
 export function nextCoachPrompts(lastUser: string | null, plan: SpendPlan): string[] {
   const top = plan.topCategory;
   const start = [
+    'What is on my agenda today?',
+    'What tasks still need me?',
+    'Any travel or deliveries coming up?',
     'How does my income compare to spending?',
-    'How much can I spend each day?',
-    'Which bank account spent more this month?',
-    top ? `Why is ${top} so high?` : 'Where am I overspending?',
   ];
 
   if (!lastUser) {
@@ -73,6 +93,36 @@ export function nextCoachPrompts(lastUser: string | null, plan: SpendPlan): stri
   const topic = detectCoachTopic(lastUser);
   const follow: Record<CoachTopic, string[]> = {
     start,
+    today: [
+      'What tasks still need me?',
+      'Any travel or deliveries coming up?',
+      'Which bills are due soon?',
+      'How much can I spend each day?',
+    ],
+    tasks: [
+      'What is overdue?',
+      'What is on my agenda today?',
+      'Remind me about upcoming events',
+      'Which bills are due soon?',
+    ],
+    travel: [
+      'What is on my agenda today?',
+      'Any packages on the way?',
+      `I have ${formatInr(plan.remaining)} left — can I afford a weekend trip?`,
+      'Which bills are due soon?',
+    ],
+    delivery: [
+      'What is on my agenda today?',
+      'Any travel coming up?',
+      'What tasks still need me?',
+      'Which bills are due soon?',
+    ],
+    security: [
+      'What should I do about a suspicious message?',
+      'What is on my agenda today?',
+      'Which bills are due soon?',
+      'How does my income compare to spending?',
+    ],
     compare: [
       `How do I keep ${formatInr(plan.remaining)} leftover?`,
       `How do I reach ${formatInr(plan.saveMonthly)} saved?`,
@@ -124,4 +174,11 @@ export function nextCoachPrompts(lastUser: string | null, plan: SpendPlan): stri
   };
 
   return uniquePrompts([...follow[topic], ...start], lastUser);
+}
+
+export function clipCoachSnapshot(text: string, max = 1400) {
+  if (text.length <= max) {
+    return text;
+  }
+  return `${text.slice(0, max).trim()}\n[truncated]`;
 }

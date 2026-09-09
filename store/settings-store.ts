@@ -3,6 +3,7 @@ import { create } from 'zustand';
 import { persistSetting, type AppSettings, type ScanLookbackMonths } from '@/services/settings-persist';
 import { DEFAULT_MODEL_ID, type ModelId } from '@/services/model-catalog';
 import { DEFAULT_WINDOWS, type ScheduleWindow } from '@/services/llm-schedule';
+import { DEFAULT_TTI_VARIANT, type TtiVariantId } from '@/services/text-to-image-catalog';
 import { markLookbackExpanded } from '@/services/scan-window';
 
 type SettingsState = AppSettings & {
@@ -18,6 +19,8 @@ type SettingsState = AppSettings & {
   setWindows: (windows: ScheduleWindow[]) => void;
   setScanLookbackMonths: (months: ScanLookbackMonths) => void;
   setGoogleAccount: (googleAccount: string) => void;
+  setRemindersOn: (remindersOn: boolean) => void;
+  setTtiVariantId: (ttiVariantId: TtiVariantId) => void;
 };
 
 export const useSettingsStore = create<SettingsState>((set) => ({
@@ -30,6 +33,8 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   windows: DEFAULT_WINDOWS,
   scanLookbackMonths: 1,
   googleAccount: '',
+  remindersOn: true,
+  ttiVariantId: DEFAULT_TTI_VARIANT,
   replaceAll: (settings) => set(settings),
   setOfflineMode: (offlineMode) => {
     set({ offlineMode });
@@ -64,5 +69,13 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   setGoogleAccount: (googleAccount) => {
     set({ googleAccount });
     void persistSetting('googleAccount', googleAccount);
+  },
+  setRemindersOn: (remindersOn) => {
+    set({ remindersOn });
+    void persistSetting('remindersOn', remindersOn);
+  },
+  setTtiVariantId: (ttiVariantId) => {
+    set({ ttiVariantId });
+    void persistSetting('ttiVariantId', ttiVariantId);
   },
 }));

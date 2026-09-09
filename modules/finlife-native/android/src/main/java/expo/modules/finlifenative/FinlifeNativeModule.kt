@@ -2,6 +2,8 @@ package expo.modules.finlifenative
 
 import android.Manifest
 import android.app.ActivityManager
+import android.app.Application
+import android.content.ComponentCallbacks2
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -16,6 +18,7 @@ import androidx.core.content.ContextCompat
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import java.util.Calendar
+import kotlin.math.max
 
 class FinlifeNativeModule : Module() {
   override fun definition() = ModuleDefinition {
@@ -23,6 +26,10 @@ class FinlifeNativeModule : Module() {
 
     AsyncFunction("getMemorySnapshot") {
       memorySnapshot()
+    }
+
+    AsyncFunction("releaseAppMemory") {
+      releaseAppMemory()
     }
 
     AsyncFunction("getTodaysInbox") {
@@ -82,8 +89,12 @@ class FinlifeNativeModule : Module() {
       context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 
-    AsyncFunction("getScreenshotPage") { since: Double, until: Double, afterId: Double ->
-      ScreenshotReader.list(appContextOrThrow(), since.toLong(), until.toLong(), afterId.toLong())
+    AsyncFunction("getImageFolders") {
+      ScreenshotReader.folders(appContextOrThrow())
+    }
+
+    AsyncFunction("getScreenshotPage") { since: Double, until: Double, afterId: Double, folders: List<String> ->
+      ScreenshotReader.list(appContextOrThrow(), since.toLong(), until.toLong(), afterId.toLong(), folders)
     }
 
     AsyncFunction("getScreenshotHash") { uri: String ->
@@ -120,6 +131,100 @@ class FinlifeNativeModule : Module() {
       "availBytes" to info.availMem.toDouble(),
       "nativeHeapBytes" to Debug.getNativeHeapAllocatedSize().toDouble(),
       "javaUsedBytes" to (runtime.totalMemory() - runtime.freeMemory()).toDouble(),
+      "lowMemory" to if (info.lowMemory) 1.0 else 0.0,
+      "thresholdBytes" to info.threshold.toDouble(),
+      "clearedCacheBytes" to 0.0,
+      "freedJavaBytes" to 0.0,
+      "freedNativeBytes" to 0.0,
+    )
+  }
+
+  /**
+   * Drops caches and unused heap for this process only.
+   * Does not stop other apps or their processes.
+   */
+  private fun releaseAppMemory(): Map<String, Double> {
+    val context = appContextOrThrow()
+    val before = memorySnapshot()
+    val clearedCacheBytes = clearSafeAppCache(context).toDouble()
+    hintThisProcessTrim(context)
+    val runtime = Runtime.getRuntime()
+    runtime.gc()
+    System.runFinalization()
+    runtime.gc()
+    val after = memorySnapshot().toMutableMap()
+    after["clearedCacheBytes"] = clearedCacheBytes
+    after["freedJavaBytes"] = max(0.0, (before["javaUsedBytes"] ?: 0.0) - (after["javaUsedBytes"] ?: 0.0))
+    after["freedNativeBytes"] = max(0.0, (before["nativeHeapBytes"] ?: 0.0) - (after["nativeHeapBytes"] ?: 0.0))
+    return after
+  }
+
+  private fun hintThisProcessTrim(context: Context) {
+    val level = ComponentCallbacks2.TRIM_MEMORY_RUNNING_MODERATE
+    try {
+      appContext.currentActivity?.onTrimMemory(level)
+    } catch (_: Exception) {
+      // Activity may already be gone.
+    }
+    try {
+      (context.applicationContext as? Application)?.onTrimMemory(level)
+    } catch (_: Exception) {
+      // Application callback is best-effort.
+    }
+  }
+
+  private fun clearSafeAppCache(context: Context): Long {
+    var bytes = 0L
+    listOfNotNull(context.cacheDir, context.externalCacheDir).forEach { root ->
+      root.listFiles()?.forEach { child ->
+        if (isSafeCacheName(child.name)) {
+          bytes += wipeQuietly(child)
+        }
+      }
+    }
+    return bytes
+  }
+
+  private fun isSafeCacheName(name: String): Boolean {
+    val lower = name.lowercase()
+    return lower in SAFE_CACHE_NAMES ||
+      lower.endsWith(".tmp") ||
+      lower.endsWith(".png") ||
+      lower.endsWith(".jpg") ||
+      lower.endsWith(".jpeg") ||
+      lower.endsWith(".webp") ||
+      lower.endsWith(".bin")
+  }
+
+  private fun wipeQuietly(file: File): Long {
+    var bytes = 0L
+    if (!file.exists()) {
+      return 0
+    }
+    if (file.isDirectory) {
+      file.listFiles()?.forEach { bytes += wipeQuietly(it) }
+    }
+    val size = if (file.isFile) file.length() else 0L
+    return if (file.delete()) bytes + size else bytes
+  }
+
+  companion object {
+    private val SAFE_CACHE_NAMES = setOf(
+      "image_cache",
+      "image-cache",
+      "expo-image",
+      "imagepicker",
+      "camera",
+      "subscription-icons",
+      "imagine",
+      "http-cache",
+      "http_cache",
+      "okhttp",
+      "okhttp-cache",
+      "image_manager_disk_cache",
+      "fresco_cache",
+      "glide",
+      "picasso-cache",
     )
   }
 

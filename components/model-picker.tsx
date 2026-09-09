@@ -60,11 +60,12 @@ export function ModelPicker() {
 
   return (
     <View style={styles.block}>
-      <AppText variant="h4">On-device model</AppText>
+      <AppText variant="h4">Language models</AppText>
       <AppText variant="bodySmall">
-        {selected.label} · {selected.sizeHint}. Refresh never calls a server. If the files are already
-        in Documents/react-native-executorch they are used as-is. Download only happens when you tap
-        Download model.
+        These are chat and scan LLMs only. Image generation is a separate diffusion model in Settings.
+        {selected.label} · {selected.sizeHint}. Inference stays on this phone. If the files are already
+        in Documents/react-native-executorch they are used as-is. Select a model, then tap Download in
+        the header.
       </AppText>
 
       {CATALOG.map((item) => {
@@ -91,6 +92,8 @@ export function ModelPicker() {
             <View style={styles.cardTop}>
               <AppText variant="labelRegular">{item.label}</AppText>
               {item.recommended ? <AppText style={styles.badge}>Recommended</AppText> : null}
+              {item.compact ? <AppText style={styles.compact}>Fits older phones</AppText> : null}
+              {item.warn ? <AppText style={styles.warnBadge}>Large</AppText> : null}
               {cached ? <AppText style={styles.cached}>On device</AppText> : null}
             </View>
             <AppText variant="bodySmall">
@@ -208,6 +211,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textTransform: 'uppercase',
   },
+  compact: {
+    color: colors.semantic.successDark,
+    fontSize: 11,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+  },
   cached: {
     color: colors.semantic.successDark,
     fontSize: 11,
@@ -216,6 +225,12 @@ const styles = StyleSheet.create({
   },
   warn: {
     color: colors.semantic.warningDark,
+  },
+  warnBadge: {
+    color: colors.semantic.warningDark,
+    fontSize: 11,
+    fontWeight: '600',
+    textTransform: 'uppercase',
   },
   input: {
     height: 48,

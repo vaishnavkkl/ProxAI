@@ -253,8 +253,7 @@ export async function importGoogleSources(): Promise<GoogleImportResult> {
 
   const start = new Date();
   start.setHours(0, 0, 0, 0);
-  const end = new Date(start);
-  end.setFullYear(end.getFullYear() + 1);
+  const end = new Date(start.getFullYear(), start.getMonth() + 2, start.getDate());
 
   const account = useSettingsStore.getState().googleAccount;
   let collected = await eventsFromExpo(start, end, account);

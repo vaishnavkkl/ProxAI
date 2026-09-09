@@ -1,13 +1,15 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { type Href, useRouter } from 'expo-router';
 import { useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
+import { AppDialog } from '@/components/app-dialog';
 import { AppText } from '@/components/app-text';
 import { MailAccountPicker } from '@/components/mail-account-picker';
 import { ScreenScaffold } from '@/components/screen-scaffold';
 import { StatCard } from '@/components/stat-card';
 import { LifeAgenda } from '@/components/life-agenda';
+import { ProgressMeter } from '@/components/progress-meter';
 import { useLifeStore } from '@/store/life-store';
 import { useMessageRefresh } from '@/hooks/use-message-refresh';
 import { getCatalogModel } from '@/services/model-catalog';
@@ -19,10 +21,11 @@ import { useSettingsStore } from '@/store/settings-store';
 import { useSubscriptionStore } from '@/store/subscription-store';
 import { useTransactionStore } from '@/store/transaction-store';
 import { useUiStore } from '@/store/ui-store';
-import { borderRadius, colors, gradients, spacing } from '@/styles';
+import { borderRadius, colors, spacing } from '@/styles';
 import type { LedgerItem } from '@/types/ledger';
 import { formatInr } from '@/utils/format-inr';
 import { monthlyFixedTotal } from '@/utils/money-plan';
+import { relevantEvents } from '@/utils/relevant-events';
 import { listBankAccounts } from '@/utils/bank-account';
 import { monthCategoryTotal } from '@/utils/month-finance';
 
@@ -99,10 +102,7 @@ function DashboardHeader() {
         </Pressable>
       </View>
       {busy ? <View style={styles.scanStatus}>
-        <AppText variant="caption" style={styles.blue}>{label || 'Reading your messages…'}</AppText>
-        <View accessibilityRole="progressbar" accessibilityValue={{ min: 0, max: 100, now: Math.round(progress * 100) }} style={styles.track}>
-          <View style={[styles.fill, { width: `${Math.max(2, Math.min(100, Math.round(progress * 100)))}%` }]} />
-        </View>
+        <ProgressMeter progress={progress} label={label || 'Reading your messages…'} />
       </View> : null}
     </View>
   );
@@ -110,6 +110,7 @@ function DashboardHeader() {
 
 function FinanceOverview() {
   const [expanded, setExpanded] = useState(false);
+  const [confirmClear, setConfirmClear] = useState(false);
   const router = useRouter();
   const setToast = useUiStore((s) => s.setToast);
   const transactions = useTransactionStore((s) => s.financeItems);
@@ -140,7 +141,7 @@ function FinanceOverview() {
         <View style={styles.overviewIcon}><Ionicons name="wallet-outline" size={21} color={colors.primary[600]} /></View>
         <View style={styles.topCopy}>
           <AppText variant="labelRegular">Finance & insights</AppText>
-          <AppText variant="caption" style={styles.muted}>Balances, accounts and your money coach</AppText>
+          <AppText variant="caption" style={styles.muted}>Balances, accounts and spend insights</AppText>
         </View>
         <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={18} color={colors.neutral[600]} />
       </Pressable>
@@ -151,22 +152,7 @@ function FinanceOverview() {
         <Pressable
           accessibilityRole="button"
           onPress={() => {
-            Alert.alert(
-              'Clear scanned data?',
-              'Removes saved messages, tasks, events, and completion history. Paycheck, rent, and EMIs stay.',
-              [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                  text: 'Clear',
-                  style: 'destructive',
-                  onPress: () => {
-                    void resetLedgerData().then(() => {
-                      setToast({ kind: 'success', message: 'Scanned data cleared. Refresh can start again.' });
-                    });
-                  },
-                },
-              ],
-            );
+            setConfirmClear(true);
           }}
           style={styles.devClear}>
           <AppText style={styles.devClearLabel} variant="labelSmall">
@@ -174,26 +160,6 @@ function FinanceOverview() {
           </AppText>
         </Pressable>
       ) : null}
-
-      <Pressable
-        accessibilityRole="button"
-        onPress={() => {
-          router.push('/coach' as Href);
-        }}
-        style={styles.coachCard}>
-        <View style={styles.coachIcon}>
-          <Ionicons color={colors.neutral[0]} name="chatbubble-ellipses" size={20} />
-        </View>
-        <View style={styles.coachCopy}>
-          <AppText style={styles.onHero} variant="h4">
-            Ask your money coach
-          </AppText>
-          <AppText style={styles.onHeroMuted} variant="bodySmall">
-            Daily and monthly spend limits from your ledger. On this phone only.
-          </AppText>
-        </View>
-        <Ionicons color={colors.neutral[0]} name="chevron-forward" size={18} />
-      </Pressable>
 
       <View style={styles.summaryRow}>
         <StatCard
@@ -208,7 +174,7 @@ function FinanceOverview() {
           icon="alarm-outline"
           label="Upcoming"
           tone="upcoming"
-          value={String(events.length)}
+          value={String(relevantEvents(events, lifeStates).length)}
         />
         <StatCard
           hint="Pending"
@@ -310,7 +276,7 @@ function FinanceOverview() {
           <AppText variant="h4">Nothing to organize yet</AppText>
           <AppText style={styles.emptyCopy} variant="bodyRegular">
             Tap Refresh to organize messages and calendar events, or use + to add
-            a task or scan your screenshots. Nothing is uploaded.
+            a task or scan images. Nothing is uploaded.
           </AppText>
         </View>
       ) : (
@@ -325,7 +291,7 @@ function FinanceOverview() {
             <AppText style={styles.emptyCopy} variant="bodySmall">
               {scan.life ?? 0} life items, {scan.transactions} spends, {scan.events} reminders, {scan.subscriptions} subs.
               Regex kept {scan.regex}
-              {scan.usedModel ? ` · model added ${scan.model}` : ' · model not used'}
+              {scan.usedModel ? ` · ${scan.modelLabel} added ${scan.model}` : ' · model not used — download one in Settings'}
               {scan.dropped > 0 ? ` · dropped ${scan.dropped} card or bill copies` : ''}.
             </AppText>
           ) : null}
@@ -343,6 +309,26 @@ function FinanceOverview() {
       )}
 
       </View> : null}
+      <AppDialog
+        visible={confirmClear}
+        title="Clear scanned data?"
+        message="Removes saved messages, tasks, events, and completion history. Paycheck, rent, and EMIs stay."
+        onClose={() => {
+          setConfirmClear(false);
+        }}
+        actions={[
+          { label: 'Cancel', tone: 'secondary', onPress: () => undefined },
+          {
+            label: 'Clear',
+            tone: 'danger',
+            onPress: () => {
+              void resetLedgerData().then(() => {
+                setToast({ kind: 'success', message: 'Scanned data cleared. Refresh can start again.' });
+              });
+            },
+          },
+        ]}
+      />
     </View>
   );
 }
@@ -367,17 +353,6 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: spacing.xs,
   },
-  track: {
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: colors.primary[100],
-    overflow: 'hidden',
-  },
-  fill: {
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: colors.primary[500],
-  },
   devClear: {
     minHeight: 48,
     justifyContent: 'center',
@@ -389,34 +364,6 @@ const styles = StyleSheet.create({
   },
   devClearLabel: {
     color: colors.semantic.dangerDark,
-  },
-  onHero: {
-    color: colors.neutral[0],
-  },
-  onHeroMuted: {
-    color: 'rgba(219,234,254,0.86)',
-  },
-  coachCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    borderRadius: borderRadius.lg,
-    padding: spacing.lg,
-    backgroundColor: colors.primary[800],
-    experimental_backgroundImage: gradients.hero,
-    minHeight: 72,
-  },
-  coachIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: borderRadius.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.16)',
-  },
-  coachCopy: {
-    flex: 1,
-    gap: spacing.xs,
   },
   summaryRow: {
     flexDirection: 'row',
