@@ -27,21 +27,23 @@ import {
   getModelRamState,
   unloadModelFromMemory,
 } from '@/services/llm-service';
-import { MODEL_SOURCE_ORG, getCatalogModel, resolveModelSources } from '@/services/model-catalog';
+import { MODEL_SOURCE_ORG, getCatalogModel, resolveModelSources, type ModelId } from '@/services/model-catalog';
 import {
-  clearDownloadedModels,
+  cacheNameFromUrl,
   countPteFiles,
   getModelStorageInfo,
   hasCachedSources,
+  listRemovableLanguageModels,
+  removeCachedModelSources,
 } from '@/services/model-storage';
 import { resetLocalData } from '@/services/reset-local-data';
 import {
   downloadTextToImage,
   hasCachedTextToImage,
   isTextToImageAvailable,
-  disposeTextToImage,
+  removeCachedTextToImage,
 } from '@/services/text-to-image';
-import { TTI_MODEL_NAME, getTtiVariant } from '@/services/text-to-image-catalog';
+import { TTI_MODEL_NAME, TTI_VARIANTS, getTtiVariant, type TtiVariantId } from '@/services/text-to-image-catalog';
 import { requestReminderPermission, syncPlanReminders, clearPlanReminders } from '@/services/reminders';
 import { describeSmsAccess, requestSmsPermission } from '@/services/sms-inbox';
 import { useSettingsStore } from '@/store/settings-store';
@@ -89,6 +91,7 @@ export function Settings() {
   const [showModels, setShowModels] = useState(false);
   const [showImages, setShowImages] = useState(false);
   const [showSchedule, setShowSchedule] = useState(false);
+  const [showRemoveModels, setShowRemoveModels] = useState(false);
   const [dialog, setDialog] = useState<{ title: string; message: string; actions: DialogAction[] } | null>(null);
 
   const catalog = getCatalogModel(modelId);
@@ -184,38 +187,55 @@ export function Settings() {
     });
   }
 
-  function confirmClearDownloads() {
-    if (useUiStore.getState().isProcessing || useModelDownloadStore.getState().kind) { setToast({ kind: 'info', message: 'Wait for the scan or download before clearing models.' }); return; }
-    setDialog({
-      title: 'Remove downloaded models?',
-      message: 'Deletes language-model and image-model files on this phone to free storage. RAM occupancy is unloaded first.',
-      actions: [
-        { label: 'Cancel', tone: 'secondary', onPress: () => undefined },
-        {
-          label: 'Remove',
-          tone: 'danger',
-          onPress: () => {
-            void (async () => {
-              try {
-                await disposeTextToImage();
-              } catch {
-                // Still delete files if unload failed.
-              }
-              try {
-                await unloadModelFromMemory();
-              } catch {
-                // Still delete files if unload failed.
-              }
-              const removed = clearDownloadedModels();
-              refreshStatus();
-              setToast({
-                kind: removed > 0 ? 'success' : 'info',
-                message: removed > 0 ? `Removed ${removed} files` : 'Download folder is already empty',
-              });
-            })();
-          },
-        },
-      ],
+  function openRemoveModels() {
+    if (useUiStore.getState().isProcessing || useModelDownloadStore.getState().kind) {
+      setToast({ kind: 'info', message: 'Wait for the scan or download before removing a model.' });
+      return;
+    }
+    setShowRemoveModels(true);
+  }
+
+  const removableLanguage = listRemovableLanguageModels({
+    customModelUrl,
+    customTokenizerUrl,
+    customTokenizerConfigUrl,
+  });
+  const removableImages = TTI_VARIANTS.filter((item) => hasCachedTextToImage(item.id));
+
+  async function removeLanguageDownload(id: ModelId) {
+    const sources = resolveModelSources({
+      modelId: id,
+      customModelUrl,
+      customTokenizerUrl,
+      customTokenizerConfigUrl,
+    });
+    const selected = resolveModelSources({
+      modelId,
+      customModelUrl,
+      customTokenizerUrl,
+      customTokenizerConfigUrl,
+    });
+    if (sources && selected && cacheNameFromUrl(sources.model) === cacheNameFromUrl(selected.model)) {
+      try {
+        await unloadModelFromMemory();
+      } catch {
+        // Still delete files if unload failed.
+      }
+    }
+    const removed = removeCachedModelSources(sources);
+    refreshStatus();
+    setToast({
+      kind: removed > 0 ? 'success' : 'info',
+      message: removed > 0 ? `Removed ${getCatalogModel(id).label}` : 'That language model is not on disk',
+    });
+  }
+
+  async function removeImageDownload(id: TtiVariantId) {
+    const removed = await removeCachedTextToImage(id);
+    refreshStatus();
+    setToast({
+      kind: removed > 0 ? 'success' : 'info',
+      message: removed > 0 ? `Removed ${TTI_MODEL_NAME} ${getTtiVariant(id).label}` : 'That image model is not on disk',
     });
   }
 
@@ -506,12 +526,64 @@ export function Settings() {
         />
 
         <SettingsRow
-          action="Remove"
+          action="Choose"
           icon="trash-bin-outline"
-          title="Remove downloaded models"
-          value="Deletes language-model and image-model files on this phone to free storage. Chat and Imagine can download them again."
-          onPress={confirmClearDownloads}
+          title="Choose a model to remove"
+          value="Pick one language or image model on this phone. Other downloads stay. Chat and Imagine can save it again later."
+          onPress={openRemoveModels}
         />
+        <AppBottomSheet
+          accessibilityLabel="Close model removal"
+          onClose={() => {
+            setShowRemoveModels(false);
+          }}
+          title="Choose a model to remove"
+          visible={showRemoveModels}>
+          <AppText variant="bodySmall">
+            Only the model you tap is deleted. Shared files used by another download stay if that other model is still on disk.
+          </AppText>
+          {removableLanguage.length || removableImages.length ? null : (
+            <AppText variant="bodyRegular">No downloaded models are on this phone.</AppText>
+          )}
+          {removableLanguage.map((item) => (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Remove ${item.label}`}
+              key={`llm-${item.id}`}
+              onPress={() => {
+                void removeLanguageDownload(item.id);
+              }}
+              style={styles.removeRow}>
+              <View style={styles.copy}>
+                <AppText variant="labelRegular">{item.label}</AppText>
+                <AppText variant="caption">Language model</AppText>
+              </View>
+              <AppText style={styles.danger} variant="labelSmall">
+                Remove
+              </AppText>
+            </Pressable>
+          ))}
+          {removableImages.map((item) => (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Remove ${item.label}`}
+              key={`tti-${item.id}`}
+              onPress={() => {
+                void removeImageDownload(item.id);
+              }}
+              style={styles.removeRow}>
+              <View style={styles.copy}>
+                <AppText variant="labelRegular">
+                  {TTI_MODEL_NAME} · {item.label}
+                </AppText>
+                <AppText variant="caption">Image model</AppText>
+              </View>
+              <AppText style={styles.danger} variant="labelSmall">
+                Remove
+              </AppText>
+            </Pressable>
+          ))}
+        </AppBottomSheet>
         <SettingsRow
           action="Recheck"
           icon="download-outline" title="Downloaded size"
@@ -527,7 +599,7 @@ export function Settings() {
             });
           }}
           accessory={
-            <Pressable accessibilityRole="button" onPress={confirmClearDownloads} style={styles.ghost}>
+            <Pressable accessibilityRole="button" onPress={openRemoveModels} style={styles.ghost}>
               <AppText style={styles.danger} variant="labelSmall">
                 Remove
               </AppText>
@@ -667,6 +739,17 @@ const styles = StyleSheet.create({
   },
   danger: {
     color: colors.semantic.danger,
+  },
+  copy: {
+    flex: 1,
+    gap: 2,
+  },
+  removeRow: {
+    minHeight: 48,
+    paddingVertical: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
   },
   headerDownload: {
     minHeight: 48,

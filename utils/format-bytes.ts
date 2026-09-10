@@ -1,3 +1,13 @@
+export function formatRamMb(mb: number): string {
+  if (!Number.isFinite(mb) || mb <= 0) {
+    return '0 MB';
+  }
+  if (mb < 1024) {
+    return `${Math.round(mb)} MB`;
+  }
+  return `${(mb / 1024).toFixed(1)} GB`;
+}
+
 export function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) {
     return '0 B';

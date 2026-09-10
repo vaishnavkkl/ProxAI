@@ -1,25 +1,25 @@
 import { Directory, File, Paths } from 'expo-file-system';
 
-import { canUseNativeLlm } from '@/utils/app-runtime';
 import { finishDownloadNotice, reportDownloadNotice } from '@/services/download-notice';
 import { exclusiveInference, occupyInference, releaseInference } from '@/services/inference-slot';
+import { getLlmRuntime } from '@/services/llm-runtime';
 import type { ProgressFn } from '@/services/llm-runtime-types';
-import { releaseLlmSlot } from '@/services/llm-service';
+import { downloadModelResources } from '@/services/model-download';
 import { findCachedFile, listCachedFileMap, unlinkNamedCacheFiles } from '@/services/model-storage';
 import {
-  DEFAULT_TTI_VARIANT,
-  getTtiVariant,
-  cacheFileNameFromUrl,
-  isCachedTti,
-  ttiCacheNames,
-  ttiSourcesFor,
-  ttiVariantSupported,
-  type TtiVariantId,
+    cacheFileNameFromUrl,
+    DEFAULT_TTI_VARIANT,
+    getTtiVariant,
+    isCachedTti,
+    ttiCacheNames,
+    ttiSourcesFor,
+    ttiVariantSupported,
+    type TtiVariantId,
 } from '@/services/text-to-image-catalog';
 import { markVisionLoaded, registerVisionUnload } from '@/services/vision-slot';
-import { useUiStore } from '@/store/ui-store';
 import { beginModelDownload } from '@/store/model-download-store';
-import { downloadModelResources } from '@/services/model-download';
+import { useUiStore } from '@/store/ui-store';
+import { canUseNativeLlm } from '@/utils/app-runtime';
 import { transferLabel } from '@/utils/format-bytes';
 import { encodeRgbaPng } from '@/utils/rgba-png';
 
@@ -82,7 +82,7 @@ function setBusy(value: boolean) {
 }
 
 function releaseImagineIfIdle() {
-  if (imagineViews === 0 && !generating && !downloadAbort) {
+  if (imagineViews === 0 && !generating) {
     void disposeTextToImage();
   }
 }
@@ -91,9 +91,23 @@ export function attachImagine() {
   imagineViews += 1;
 }
 
+export function unloadImaginePipeline() {
+  if (imagineViews > 0) {
+    return;
+  }
+  if (generating) {
+    cancelled = true;
+  }
+  void disposeTextToImage().catch(() => undefined);
+}
+
 export function detachImagine() {
   imagineViews = Math.max(0, imagineViews - 1);
-  releaseImagineIfIdle();
+  if (imagineViews > 0) {
+    return;
+  }
+  // A file download can finish on disk. The SDXS pipeline does not stay in RAM.
+  unloadImaginePipeline();
 }
 
 function throwIfStopped() {
@@ -357,7 +371,7 @@ export async function generateTextToImage(
     setBusy(true);
     try {
       throwIfStopped();
-      await releaseLlmSlot();
+      await getLlmRuntime().releaseLlmSlot();
       throwIfStopped();
       const variant = getTtiVariant(id);
       const pipeline = await loadPipeline(id, onProgress);

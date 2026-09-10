@@ -1,9 +1,16 @@
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/app-text';
+import { ensureChatModelForOcr } from '@/services/ocr-chat-model';
 import { useSettingsStore } from '@/store/settings-store';
 import { useUiStore } from '@/store/ui-store';
-import { borderRadius, colors, spacing } from '@/styles';
+import { borderRadius, colors, gradients, spacing } from '@/styles';
+
+const OPTIONS = [
+  { id: 'en' as const, label: 'English', caption: 'Latin text', icon: 'language-outline' as const, glyph: 'Aa' },
+  { id: 'ml' as const, label: 'മലയാളം', caption: 'Malayalam + English', icon: 'earth-outline' as const, glyph: 'അ' },
+];
 
 export function OcrLanguagePicker() {
   const language = useSettingsStore((s) => s.ocrLanguage);
@@ -13,18 +20,41 @@ export function OcrLanguagePicker() {
     <View style={styles.container}>
       <AppText variant="labelRegular">Image text language</AppText>
       <View style={styles.options}>
-        {([{ id: 'en', label: 'English / Latin' }, { id: 'ml', label: 'മലയാളം + English' }] as const).map((item) => (
-          <Pressable key={item.id} accessibilityRole="radio"
-            accessibilityState={{ checked: language === item.id, disabled: busy }}
-            disabled={busy} onPress={() => setLanguage(item.id)}
-            style={[styles.option, language === item.id && styles.selected, busy && styles.disabled]}>
-            <AppText variant="bodySmall">{item.label}</AppText>
-          </Pressable>
-        ))}
+        {OPTIONS.map((item) => {
+          const on = language === item.id;
+          return (
+            <Pressable
+              accessibilityRole="radio"
+              accessibilityState={{ checked: on, disabled: busy }}
+              disabled={busy}
+              key={item.id}
+              onPress={() => {
+                setLanguage(item.id);
+                if (item.id === 'ml') {
+                  ensureChatModelForOcr();
+                }
+              }}
+              style={[styles.option, on ? styles.selected : undefined, busy ? styles.disabled : undefined]}>
+              <View style={[styles.iconWrap, on ? styles.iconWrapOn : undefined]}>
+                {item.id === 'ml' ? (
+                  <AppText style={on ? styles.glyphOn : styles.glyph}>{item.glyph}</AppText>
+                ) : (
+                  <Ionicons color={on ? colors.primary[600] : colors.neutral[700]} name={item.icon} size={22} />
+                )}
+              </View>
+              <View style={styles.copy}>
+                <AppText variant="labelRegular">{item.label}</AppText>
+                <AppText style={styles.caption} variant="caption">
+                  {item.caption}
+                </AppText>
+              </View>
+            </Pressable>
+          );
+        })}
       </View>
       <AppText variant="caption">
         {language === 'ml'
-          ? 'Reads printed Malayalam and English on this phone. Applies to photos and folder scans. Select a Malayalam model for chat about the text.'
+          ? 'Reads printed Malayalam and English on this phone. Chat about this text uses a Malayalam model, not an English-only one.'
           : 'Fast offline English and Latin text recognition. Choose Malayalam for mixed Malayalam and English images.'}
       </AppText>
     </View>
@@ -32,10 +62,60 @@ export function OcrLanguagePicker() {
 }
 
 const styles = StyleSheet.create({
-  container: { gap: spacing.sm },
-  options: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  option: { minHeight: 44, justifyContent: 'center', paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
-    borderWidth: 1, borderColor: colors.neutral[200], borderRadius: borderRadius.md },
-  selected: { borderColor: colors.primary[500], backgroundColor: colors.primary[50] },
-  disabled: { opacity: 0.5 },
+  container: {
+    gap: spacing.sm,
+  },
+  options: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  option: {
+    flex: 1,
+    minHeight: 72,
+    padding: spacing.md,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: colors.primary[100],
+    experimental_backgroundImage: gradients.languageCard,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  selected: {
+    borderColor: colors.primary[500],
+    experimental_backgroundImage: gradients.languageCardOn,
+  },
+  disabled: {
+    opacity: 0.5,
+  },
+  iconWrap: {
+    width: 44,
+    height: 48,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.neutral[0],
+    transform: [{ rotate: '-5deg' }],
+  },
+  iconWrapOn: {
+    backgroundColor: colors.primary[50],
+  },
+  copy: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  caption: {
+    color: colors.neutral[600],
+  },
+  glyph: {
+    color: colors.neutral[700],
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  glyphOn: {
+    color: colors.primary[600],
+    fontSize: 18,
+    fontWeight: '700',
+  },
 });

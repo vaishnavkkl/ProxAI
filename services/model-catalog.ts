@@ -50,11 +50,12 @@ export const MODEL_SOURCE_DOCS =
 export const MODEL_EXPORT_DOCS = 'https://docs.pytorch.org/executorch/1.1/llm/export-llm.html';
 
 export const DEFAULT_MODEL_ID: BuiltinModelId = 'qwen2_5_0_5b';
+export const DEFAULT_MALAYALAM_MODEL_ID: BuiltinModelId = 'qwen3_0_6b_malayalam';
 
 export const CATALOG: CatalogModel[] = [
   {
     id: 'qwen3_0_6b_malayalam',
-    label: 'Malayalam · Qwen3 0.6B',
+    label: 'Qwen3 0.6B 8da4w',
     sizeHint: '506 MB model + tokenizer',
     modelBytes: 505686400,
     ramHint: 'Compact starting point for 6–8 GB phones; available RAM matters',
@@ -342,6 +343,21 @@ export const CUSTOM_URL_HELP = [
 
 export function getCatalogModel(id: ModelId): CatalogModel {
   return CATALOG.find((item) => item.id === id) ?? CATALOG.find((item) => item.id === DEFAULT_MODEL_ID) ?? CATALOG[0];
+}
+
+export function isMalayalamChatModel(id: ModelId) {
+  return getCatalogModel(id).malayalam === true;
+}
+
+export function malayalamChatModels() {
+  return CATALOG.filter((item) => item.malayalam);
+}
+
+export function chatCatalogForOcr(language: 'en' | 'ml') {
+  if (language !== 'ml') {
+    return CATALOG;
+  }
+  return CATALOG.filter((item) => item.malayalam || item.id === 'custom');
 }
 
 export function isModelId(value: string): value is ModelId {

@@ -2,7 +2,11 @@
   "name": "@proxai/native-install-tools",
   "version": "1.0.0",
   "private": true,
+  "scripts": {
+    "install": "node install.cjs"
+  },
   "bin": {
-    "sha256sum": "sha256sum.cjs"
+    "sha256sum": "sha256sum.cjs",
+    "tar": "tar.cjs"
   }
 }

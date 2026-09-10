@@ -4,7 +4,7 @@ import { useSettingsStore } from '@/store/settings-store';
 export type OcrLanguage = 'en' | 'ml';
 
 export function ocrVersion(language: OcrLanguage): string {
-  return language === 'ml' ? 'tesseract-4.9.0-mal-eng-fast-87416418-v1' : 'mlkit-latin-16.0.1-4096-v1';
+  return language === 'ml' ? 'tesseract-4.9.0-mal-eng-fast-87416418-v2' : 'mlkit-latin-16.0.1-4096-v1';
 }
 
 /** Both gallery/camera and folder scans use the same explicit offline language. */

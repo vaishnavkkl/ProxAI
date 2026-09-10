@@ -24,6 +24,7 @@ type FinlifeNativeModule = {
   getScreenshotHash?: (uri: string) => Promise<string>;
   recognizeScreenshot?: (uri: string) => Promise<string>;
   recognizeMalayalamScreenshot?: (uri: string) => Promise<string>;
+  saveGeneratedImage?: (uri: string) => Promise<string>;
 };
 
 export function getFinlifeNative(): FinlifeNativeModule | null {

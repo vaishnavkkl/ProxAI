@@ -4,6 +4,8 @@ import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 
 import { AppText } from '@/components/app-text';
+import { ensureChatModelForOcr } from '@/services/ocr-chat-model';
+import { useSettingsStore } from '@/store/settings-store';
 import { useUiStore } from '@/store/ui-store';
 import { borderRadius, colors, gradients, spacing } from '@/styles';
 import { ocrCoachQuestion, ocrTextBlocks, selectedOcrText, splitOcrBlocks } from '@/utils/ocr-blocks';
@@ -22,8 +24,9 @@ export function OcrTextBlocks({ text, onAsk, asking: askingProp, onAskingChange 
   const readable = ocrTextBlocks(text);
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [internalAsking, setInternalAsking] = useState(false);
-  const [instruction, setInstruction] = useState('Rephrase this');
+  const [instruction, setInstruction] = useState('');
   const setToast = useUiStore((s) => s.setToast);
+  const ocrLanguage = useSettingsStore((s) => s.ocrLanguage);
   const excerpt = selectedOcrText(blocks, selected);
   const picked = readable.filter((block) => selected[block.id]).length;
   const asking = askingProp ?? internalAsking;
@@ -56,6 +59,7 @@ export function OcrTextBlocks({ text, onAsk, asking: askingProp, onAskingChange 
       <Pressable
         accessibilityRole="button"
         onPress={() => {
+          setInstruction('');
           setAsking(true);
         }}
         style={styles.primary}>
@@ -114,7 +118,8 @@ export function OcrTextBlocks({ text, onAsk, asking: askingProp, onAskingChange 
         <Pressable
           accessibilityRole="button"
           onPress={() => {
-            const question = ocrCoachQuestion(instruction, excerpt);
+            ensureChatModelForOcr();
+            const question = ocrCoachQuestion(instruction, excerpt, ocrLanguage);
             setAsking(false);
             onAsk(question);
           }}

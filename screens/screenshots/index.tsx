@@ -1,6 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useEffect, useState } from 'react';
 import { FlatList, Linking, Pressable, StyleSheet, Switch, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppBottomSheet } from '@/components/app-bottom-sheet';
 import { AppText } from '@/components/app-text';
@@ -30,7 +31,7 @@ import {
 } from '@/services/screenshot-scanner';
 import { useCoachStore } from '@/store/coach-store';
 import { useUiStore } from '@/store/ui-store';
-import { colors, spacing, borderRadius } from '@/styles';
+import { borderRadius, colors, gradients, spacing } from '@/styles';
 import { defaultImageFolders } from '@/utils/ocr-blocks';
 import { openCoach } from '@/utils/open-coach';
 
@@ -57,6 +58,7 @@ function keyExtractor(item: ScreenshotScan) {
 }
 
 export function Screenshots() {
+  const insets = useSafeAreaInsets();
   const [month, setMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [rows, setRows] = useState<ScreenshotScan[]>([]);
   const [enabled, setEnabled] = useState(false);
@@ -214,8 +216,12 @@ export function Screenshots() {
         }
         ListHeaderComponent={
           <View style={styles.header}>
-            <ScreenBack accessibilityLabel="Go back" />
-            <SectionHero icon="scan-outline" title="Image intelligence" subtitle="OCR on this phone · copy or ask the assistant" />
+            <SectionHero
+              icon="scan-outline"
+              start={<ScreenBack accessibilityLabel="Go back" tone="inverse" />}
+              subtitle="OCR on this phone · copy or ask the assistant"
+              title="Image intelligence"
+            />
             <View style={styles.card}>
               <View style={styles.row}>
                 <View style={styles.copy}>
@@ -248,39 +254,42 @@ export function Screenshots() {
             <View style={styles.card}>
               <OcrLanguagePicker />
               <AppText variant="labelRegular">Read one photo</AppText>
-              <Pressable
-                accessibilityRole="button"
-                disabled={busy}
-                onPress={() => {
-                  void ocrFrom('gallery');
-                }}
-                style={styles.actionRow}>
-                <View style={styles.actionIcon}>
-                  <Ionicons color={colors.primary[600]} name="images-outline" size={21} />
-                </View>
-                <View style={styles.copy}>
-                  <AppText variant="labelRegular">From gallery</AppText>
-                  <AppText variant="bodySmall">Choose a photo already on this phone</AppText>
-                </View>
-                <Ionicons color={colors.primary[500]} name="chevron-forward" size={20} />
-              </Pressable>
-              <View style={styles.hairline} />
-              <Pressable
-                accessibilityRole="button"
-                disabled={busy}
-                onPress={() => {
-                  void ocrFrom('camera');
-                }}
-                style={styles.actionRow}>
-                <View style={styles.actionIcon}>
-                  <Ionicons color={colors.primary[600]} name="camera-outline" size={21} />
-                </View>
-                <View style={styles.copy}>
-                  <AppText variant="labelRegular">From camera</AppText>
-                  <AppText variant="bodySmall">Take a photo and read the text here</AppText>
-                </View>
-                <Ionicons color={colors.primary[500]} name="chevron-forward" size={20} />
-              </Pressable>
+              <View style={styles.sourceOptions}>
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={busy}
+                  onPress={() => {
+                    void ocrFrom('gallery');
+                  }}
+                  style={[styles.sourceOption, busy ? styles.sourceDisabled : undefined]}>
+                  <View style={styles.sourceIcon}>
+                    <Ionicons color={colors.neutral[700]} name="images-outline" size={22} />
+                  </View>
+                  <View style={styles.sourceCopy}>
+                    <AppText variant="labelRegular">From gallery</AppText>
+                    <AppText style={styles.sourceCaption} variant="caption">
+                      Photo on this phone
+                    </AppText>
+                  </View>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={busy}
+                  onPress={() => {
+                    void ocrFrom('camera');
+                  }}
+                  style={[styles.sourceOption, busy ? styles.sourceDisabled : undefined]}>
+                  <View style={styles.sourceIcon}>
+                    <Ionicons color={colors.neutral[700]} name="camera-outline" size={22} />
+                  </View>
+                  <View style={styles.sourceCopy}>
+                    <AppText variant="labelRegular">From camera</AppText>
+                    <AppText style={styles.sourceCaption} variant="caption">
+                      Take a photo
+                    </AppText>
+                  </View>
+                </Pressable>
+              </View>
             </View>
             <AppText variant="bodySmall">
               Default is the Screenshots folder. You can add Camera or other albums. OCR stays on this phone. The
@@ -331,20 +340,23 @@ export function Screenshots() {
                 {busy ? 'Scanning…' : 'Scan this month'}
               </AppText>
             </Pressable>
-            {busy ? (
-              <ProgressMeter progress={progress} label={label || status} />
-            ) : (
+            {busy ? null : (
               <AppText accessibilityLiveRegion="polite" variant="bodySmall">
                 {status}
               </AppText>
             )}
           </View>
         }
-        contentContainerStyle={styles.list}
+        contentContainerStyle={[styles.list, busy ? styles.listBusy : undefined]}
         data={rows}
         keyExtractor={keyExtractor}
         renderItem={renderItem}
       />
+      {busy ? (
+        <View style={[styles.progressDock, { paddingBottom: Math.max(insets.bottom, spacing.md) }]}>
+          <ProgressMeter progress={progress} label={label || status} />
+        </View>
+      ) : null}
       <ScreenshotDetailSheet
         onClose={() => {
           useUiStore.getState().setSelectedScreenshotId(null);
@@ -409,6 +421,19 @@ export function Screenshots() {
 
 const styles = StyleSheet.create({
   list: { gap: spacing.md, paddingBottom: spacing['2xl'] },
+  listBusy: { paddingBottom: 108 },
+  progressDock: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    backgroundColor: colors.neutral[0],
+    borderTopWidth: 1,
+    borderColor: colors.neutral[200],
+    boxShadow: '0px -4px 16px rgba(11,18,32,0.08)',
+  },
   header: { gap: spacing.md },
   row: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   copy: { flex: 1, gap: spacing.xs },
@@ -433,24 +458,41 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: spacing.sm,
   },
-  actionRow: {
-    minHeight: 48,
+  sourceOptions: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  sourceOption: {
+    flex: 1,
+    minHeight: 72,
+    padding: spacing.md,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: colors.primary[100],
+    experimental_backgroundImage: gradients.languageCard,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
-    paddingVertical: spacing.sm,
+    gap: spacing.sm,
   },
-  actionIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 14,
+  sourceDisabled: {
+    opacity: 0.5,
+  },
+  sourceIcon: {
+    width: 44,
+    height: 48,
+    borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.primary[50],
+    backgroundColor: colors.neutral[0],
+    transform: [{ rotate: '-5deg' }],
   },
-  hairline: {
-    height: 1,
-    backgroundColor: colors.neutral[100],
+  sourceCopy: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  sourceCaption: {
+    color: colors.neutral[600],
   },
   folderRow: {
     minHeight: 48,

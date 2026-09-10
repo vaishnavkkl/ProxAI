@@ -8,6 +8,7 @@ import { notifyScanResult } from '@/services/reminders';
 import { scanScreenshots, screenshotsEnabled } from '@/services/screenshot-scanner';
 import { collectInboxPage, rememberInboxPage } from '@/services/sms-inbox';
 import { useSettingsStore } from '@/store/settings-store';
+import { refreshHomeBrief } from '@/services/home-brief';
 import { getLlmRuntime } from './llm-runtime';
 import type { BatchResult, CoachTurn, LlmAvailability, ProgressFn } from './llm-runtime-types';
 
@@ -97,6 +98,7 @@ export async function processRefreshMessages(onProgress: ProgressFn, options: { 
     await saveScanSummary({ at: Date.now(), modelLabel: getCatalogModel(settings.modelId).label, usedModel: llmRan || model > 0,
       transactions: result.transactions, events: result.events, subscriptions: result.subscriptions, life: result.life ?? 0, regex, model, dropped });
     await notifyScanResult({ events: result.events, life: result.life ?? 0, bills: result.screenshotItems ?? 0 });
+    await refreshHomeBrief({ allowLoad: llmRan || runtime.getRamState().loaded }).catch(() => undefined);
   } catch {
     result.errors++;
     result.skipReason = 'Scan stopped early. Saved pages are kept; Refresh retries unfinished messages.';

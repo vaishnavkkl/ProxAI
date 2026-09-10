@@ -2,13 +2,13 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useNavigation } from 'expo-router';
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
-  FlatList,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  TextInput,
-  View,
+    ActivityIndicator,
+    FlatList,
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    TextInput,
+    View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -16,25 +16,27 @@ import { AppBottomSheet } from '@/components/app-bottom-sheet';
 import { AppDialog } from '@/components/app-dialog';
 import { AppText } from '@/components/app-text';
 import { CoachTyping } from '@/components/coach-typing';
+import { ModelRamCaption } from '@/components/model-ram-caption';
 import { ScreenBack } from '@/components/screen-back';
 import { useKeyboardInset } from '@/hooks/use-keyboard-inset';
 import {
-  askCoach,
-  getModelAvailability,
-  getModelRamState,
-  interruptCoach,
-  loadCoachSession,
-  switchOnDeviceModel,
-  unloadCoachSession,
+    askCoach,
+    getModelAvailability,
+    getModelRamState,
+    interruptCoach,
+    loadCoachSession,
+    switchOnDeviceModel,
+    unloadCoachSession,
 } from '@/services/llm-service';
-import { CATALOG, getCatalogModel, resolveModelSources, type ModelId } from '@/services/model-catalog';
+import { getCatalogModel, resolveModelSources, type ModelId } from '@/services/model-catalog';
+import { chatModelsForOcr, ensureChatModelForOcr } from '@/services/ocr-chat-model';
 import { hasCachedSources } from '@/services/model-storage';
 import { useBudgetStore } from '@/store/budget-store';
 import { useCoachStore, type CoachBubble } from '@/store/coach-store';
-import { useLifeStore } from '@/store/life-store';
 import { useEventStore } from '@/store/event-store';
-import { useSubscriptionStore } from '@/store/subscription-store';
+import { useLifeStore } from '@/store/life-store';
 import { useSettingsStore } from '@/store/settings-store';
+import { useSubscriptionStore } from '@/store/subscription-store';
 import { useTransactionStore } from '@/store/transaction-store';
 import { useUiStore } from '@/store/ui-store';
 import { borderRadius, colors, gradients, layout, spacing } from '@/styles';
@@ -121,10 +123,10 @@ const CoachThread = memo(function CoachThread({ switching, switchLabel }: { swit
         <FlatList
           ListEmptyComponent={
             <View style={styles.emptyCard}>
-              <AppText variant="h4">Ask about your day, plans, and money</AppText>
+              <AppText variant="h4">Ask about your day and plans</AppText>
               <AppText style={styles.empty} variant="bodyRegular">
-                Your assistant reads tasks, travel, deliveries, bills, screenshots, and spends from this
-                phone. Replies stream as they are written. Pin a reply to keep a short summary on Home.
+                Your assistant reads tasks, travel, deliveries, and reminders from this phone. Money stays
+                in Finance. Replies stream as they are written. Pin a reply to keep a short summary on Home.
               </AppText>
             </View>
           }
@@ -181,6 +183,8 @@ export function Coach() {
   const isProcessing = useUiStore((s) => s.isProcessing);
   const modelInRam = useUiStore((s) => s.modelInRam);
   const modelId = useSettingsStore((s) => s.modelId);
+  const ocrLanguage = useSettingsStore((s) => s.ocrLanguage);
+  const chatModels = chatModelsForOcr(ocrLanguage);
   const customModelUrl = useSettingsStore((s) => s.customModelUrl);
   const customTokenizerUrl = useSettingsStore((s) => s.customTokenizerUrl);
   const customTokenizerConfigUrl = useSettingsStore((s) => s.customTokenizerConfigUrl);
@@ -204,6 +208,7 @@ export function Coach() {
 
   useEffect(() => {
     released.current = false;
+    ensureChatModelForOcr();
     useUiStore.getState().setModelInRam(getModelRamState().loaded);
     const warmup = setTimeout(() => {
       if (released.current) return;
@@ -464,13 +469,18 @@ export function Coach() {
               {catalog.label}
             </AppText>
           </View>
-          <AppText style={modelInRam ? styles.modelOn : styles.modelOff} variant="caption">
-            {switching
-              ? switchLabel || 'Unloading the previous model…'
-              : modelInRam
-                ? 'Loaded · tap to switch'
-                : 'Not in RAM · tap to switch'}
-          </AppText>
+          {catalog.malayalam ? (
+            <AppText style={styles.modelOff} variant="caption">
+              Malayalam supported
+            </AppText>
+          ) : null}
+          {switching ? (
+            <AppText style={styles.modelOff} variant="caption">
+              {switchLabel || 'Unloading the previous model…'}
+            </AppText>
+          ) : (
+            <ModelRamCaption loadBytes={catalog.modelBytes} loaded={modelInRam} paused={busy || switching} />
+          )}
         </Pressable>
         <Pressable
           accessibilityRole="button"
@@ -492,9 +502,11 @@ export function Coach() {
         title="On this phone"
         visible={picking}>
         <AppText variant="bodyRegular">
-          Models already on this phone load immediately. Others stay selected until you download them in Settings. No internet is required to switch a saved model.
+          {ocrLanguage === 'ml'
+            ? 'Malayalam OCR is on, so only Malayalam models are listed for chat. Others stay in Settings after you switch image text back to English.'
+            : 'Models already on this phone load immediately. Others stay selected until you download them in Settings. No internet is required to switch a saved model.'}
         </AppText>
-        {CATALOG.filter((item) => item.id !== 'custom').map((item) => {
+        {chatModels.filter((item) => item.id !== 'custom').map((item) => {
             const active = item.id === modelId;
             const onDisk = hasCachedSources(
               resolveModelSources({
@@ -516,6 +528,9 @@ export function Coach() {
                 style={[styles.modelRow, active ? styles.modelRowOn : undefined]}>
                 <View style={styles.modelCopy}>
                   <AppText variant="labelRegular">{item.label}</AppText>
+                  {item.malayalam ? (
+                    <AppText variant="caption">Malayalam supported</AppText>
+                  ) : null}
                   <AppText variant="caption">
                     {onDisk ? `On this phone · ${item.sizeHint}` : `Not downloaded · ${item.sizeHint}`}
                   </AppText>

@@ -30,5 +30,18 @@ export function cleanCoachOutput(text: string): string {
     }
   }
   // A token boundary can fall before the pipe in a control marker.
-  return clean.endsWith('<') ? clean.slice(0, -1) : clean;
+  if (clean.endsWith('<')) {
+    clean = clean.slice(0, -1);
+  }
+  return stripModelThinking(clean);
+}
+
+/** Qwen thinking tokens are real model output. Hide them; they are not a UI spinner. */
+export function stripModelThinking(text: string): string {
+  let clean = text.replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/gi, '');
+  const open = clean.search(/<think(?:ing)?>/i);
+  if (open >= 0) {
+    clean = clean.slice(0, open);
+  }
+  return clean.replace(/<\/think(?:ing)?>/gi, '').replace(/\/no_think\b/gi, '').replace(/\/think\b/gi, '').replace(/^\s+/, '');
 }

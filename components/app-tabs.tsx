@@ -62,7 +62,7 @@ export function AppTabs() {
             tabBarIcon: ({ color, focused }) => (
               <Ionicons
                 color={color}
-                name={focused ? 'pie-chart' : 'pie-chart-outline'}
+                name={focused ? 'wallet' : 'wallet-outline'}
                 size={ICON_SIZE}
               />
             ),

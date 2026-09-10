@@ -2,8 +2,8 @@ import '@/utils/keep-awake-guard';
 
 import { Inter_400Regular, Inter_500Medium, Inter_600SemiBold } from '@expo-google-fonts/inter';
 import { Poppins_600SemiBold, Poppins_700Bold } from '@expo-google-fonts/poppins';
-import { DefaultTheme, ThemeProvider } from 'expo-router/react-navigation';
 import { useFonts } from 'expo-font';
+import { DefaultTheme, ThemeProvider } from 'expo-router/react-navigation';
 import { Stack } from 'expo-router/stack';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
@@ -11,8 +11,8 @@ import { useEffect, useState } from 'react';
 import 'react-native-reanimated';
 
 import { LedgerDetailHost } from '@/components/ledger-detail-host';
-import { NotificationToast } from '@/components/notification-toast';
 import { ModelDownloadBanner } from '@/components/model-download-banner';
+import { NotificationToast } from '@/components/notification-toast';
 import { setupExecutorch } from '@/services/executorch-setup';
 import { hydrateApp } from '@/services/hydrate';
 import { setupReminderChannels, subscribeReminderActions, syncPlanReminders } from '@/services/reminders';
@@ -93,6 +93,7 @@ export default function RootLayout() {
       <Stack
         screenOptions={{
           headerShown: false,
+          header: () => null,
           animation: 'fade',
         }}>
         <Stack.Screen name="index" />
@@ -123,6 +124,15 @@ export default function RootLayout() {
           options={{
             presentation: 'card',
             animation: 'slide_from_bottom',
+            headerShown: false,
+            gestureEnabled: true,
+          }}
+        />
+        <Stack.Screen
+          name="finance"
+          options={{
+            presentation: 'card',
+            animation: 'slide_from_right',
             headerShown: false,
             gestureEnabled: true,
           }}

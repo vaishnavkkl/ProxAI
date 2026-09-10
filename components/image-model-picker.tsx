@@ -4,9 +4,9 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/app-text';
 import { ModelDownloadCard } from '@/components/model-download-card';
-import { useModelDownloadStore } from '@/store/model-download-store';
 import { hasCachedTextToImage, removeCachedTextToImage } from '@/services/text-to-image';
 import { TTI_MODEL_NAME, TTI_VARIANTS, type TtiVariantId, ttiVariantSupported } from '@/services/text-to-image-catalog';
+import { useModelDownloadStore } from '@/store/model-download-store';
 import { useSettingsStore } from '@/store/settings-store';
 import { useUiStore } from '@/store/ui-store';
 import { borderRadius, colors, spacing } from '@/styles';

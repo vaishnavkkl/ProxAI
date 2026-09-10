@@ -121,6 +121,10 @@ class FinlifeNativeModule : Module() {
     AsyncFunction("recognizeMalayalamScreenshot") { uri: String ->
       ScreenshotReader.recognize(appContextOrThrow(), uri, malayalam = true)
     }
+
+    AsyncFunction("saveGeneratedImage") { uri: String ->
+      ScreenshotReader.saveGenerated(appContextOrThrow(), uri)
+    }
   }
 
   private fun appContextOrThrow(): Context {
