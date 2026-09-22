@@ -18,7 +18,9 @@ import { confirmedRenewals } from '@/utils/renewals';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRouter } from 'expo-router';
 import { useEffect, useState, type ReactNode } from 'react';
-import { AppState, FlatList, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { AppState, FlatList, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { AppPressable as Pressable } from '@/components/app-pressable';
+
 
 type AgendaEntry = { id: string; title: string; count: number } | { id: string; item: LedgerItem };
 

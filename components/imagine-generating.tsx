@@ -1,6 +1,7 @@
 import { StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/app-text';
+import { LogoLoader } from '@/components/logo-loader';
 import { colors, gradients, spacing } from '@/styles';
 
 type ImagineGeneratingProps = {
@@ -44,6 +45,9 @@ export function ImagineGenerating({ progress, label, compact = false }: ImagineG
             <PixelCell key={index} on={index < lit} />
           ))}
         </View>
+        <View style={{ ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center' }} pointerEvents="none">
+          <LogoLoader size={compact ? 36 : 64} />
+        </View>
         {compact ? null : (
           <View style={styles.copy}>
             <AppText style={styles.title} variant="labelRegular">
@@ -74,11 +78,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary[950],
   },
   studio: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     experimental_backgroundImage: gradients.imagineStudio,
   },
   grid: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     flexDirection: 'row',
     flexWrap: 'wrap',
   },

@@ -3,7 +3,9 @@ import Constants from 'expo-constants';
 import { type Href, useRouter } from 'expo-router';
 import { openBrowserAsync, WebBrowserPresentationStyle } from 'expo-web-browser';
 import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Switch, View } from 'react-native';
+import { StyleSheet, Switch, View } from 'react-native';
+import { AppPressable as Pressable } from '@/components/app-pressable';
+
 
 import { AppDialog, type DialogAction } from '@/components/app-dialog';
 import { AppText } from '@/components/app-text';

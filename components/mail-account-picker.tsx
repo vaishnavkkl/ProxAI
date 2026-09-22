@@ -1,4 +1,6 @@
-import { Pressable, StyleSheet } from 'react-native';
+import { StyleSheet } from 'react-native';
+import { AppPressable as Pressable } from '@/components/app-pressable';
+
 
 import { AppBottomSheet } from '@/components/app-bottom-sheet';
 import { AppText } from '@/components/app-text';

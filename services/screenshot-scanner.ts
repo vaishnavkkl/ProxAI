@@ -1,5 +1,6 @@
 import { PermissionsAndroid, Platform } from 'react-native';
 import { getDb, getScanMeta, persistParsedBatch, setScanMeta } from '@/services/database';
+import { isModelTimeout } from '@/services/model-deadline';
 import { readExtraction, writeExtraction } from '@/services/extraction-cache';
 import { getFinlifeNative } from '@/services/finlife-native';
 import { ingestMessagePage } from '@/services/message-ingestion';
@@ -157,7 +158,8 @@ export async function scanScreenshots(month = new Date(), onProgress: (label: st
             saved,
             classified: extracted.items.length > 0,
           });
-        } catch {
+        } catch (error) {
+          if (isModelTimeout(error)) throw error;
           // Never cache failure as an empty result: inaccessible/corrupt images retry next scan.
           errors++;
         }

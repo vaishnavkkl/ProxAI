@@ -1,5 +1,6 @@
 ﻿import { importGoogleSources } from '@/services/device-calendar';
 import { importInstalledSubscriptions } from '@/services/installed-apps';
+import { isModelTimeout } from '@/services/model-deadline';
 import { ingestMessagePage } from '@/services/message-ingestion';
 import { getCatalogModel, resolveModelSources } from '@/services/model-catalog';
 import { ensureParserRevision } from '@/services/parser-revision';
@@ -91,6 +92,7 @@ export async function processRefreshMessages(onProgress: ProgressFn, options: { 
           ? (messages) => runtime.inferUnmatched(messages, onProgress) : undefined);
         result.screenshots = shots.read; result.screenshotItems = shots.added; result.errors += shots.errors;
       } catch (error) {
+        if (isModelTimeout(error)) throw error;
         result.errors++;
         result.skipReason = error instanceof Error ? error.message : 'Screenshot scan could not finish.';
       }
@@ -99,7 +101,8 @@ export async function processRefreshMessages(onProgress: ProgressFn, options: { 
       transactions: result.transactions, events: result.events, subscriptions: result.subscriptions, life: result.life ?? 0, regex, model, dropped });
     await notifyScanResult({ events: result.events, life: result.life ?? 0, bills: result.screenshotItems ?? 0 });
     await refreshHomeBrief({ allowLoad: llmRan || runtime.getRamState().loaded }).catch(() => undefined);
-  } catch {
+  } catch (error) {
+    if (isModelTimeout(error)) throw error;
     result.errors++;
     result.skipReason = 'Scan stopped early. Saved pages are kept; Refresh retries unfinished messages.';
   } finally {

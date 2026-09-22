@@ -1,6 +1,8 @@
 import { type Href, useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { AppPressable as Pressable } from '@/components/app-pressable';
+
 
 import { AppText } from '@/components/app-text';
 import { ModelDownloadCard } from '@/components/model-download-card';

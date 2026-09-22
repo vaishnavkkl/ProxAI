@@ -16,10 +16,28 @@ const BILL_NOTICE =
 const PAYMENT_ACK =
   /\b(payment (?:of|for|received|credited|posted|successful)|received (?:your )?payment|thank you for (?:the |your )?payment|payment has been|credited to your credit card|received on your (?:credit )?card)\b/i;
 
+const CARD_ISSUER = /\b(?:sbicrd|sbicard|hdfccr|icicic|axiscc|kotak\s*c[ac]rd|amex(?:cr)?|onecrd|onecard)\b/i;
+
 export type CardDecision = 'keep' | 'drop' | 'verify';
 
 export function isCardText(text: string): boolean {
   return CARD.test(text);
+}
+
+/** A card issuer or masked card number is not evidence of a deposit account. */
+export function isCreditCardAccountText(sender: string, text: string): boolean {
+  const header = sender.trim().replace(/^[a-z]{2}-/i, '').replace(/-[a-z]$/i, '').toLowerCase();
+  if (CARD_ISSUER.test(header) || CARD_ISSUER.test(text)) return true;
+  if (/\b(?:credit[\s-]*cards?|cc|sbi\s*card|amex|american express|onecard|infinia|regalia|millennia)\b/i.test(text)) return true;
+  // Preserve explicitly identified debit-card spending; never use its card suffix as an account number.
+  return !/\bdebit[\s-]*card\b/i.test(text) &&
+    /\bcard\s*(?:(?:a\/c|account|ending(?:\s+(?:in|with))?|no\.?|number)\s*)?[:.#-]?\s*(?:[x*]+\s*)?\d{3,16}\b|\bcard\b.*\b(?:credit limit|available limit|minimum due|total due)\b/i.test(text);
+}
+
+export function isCreditCardAccount(item: ParsedItem | LedgerItem): boolean {
+  const text = [item.merchant, item.bankId, item.bankLabel, item.sourceBody, item.review, item.note].filter(Boolean).join(' ');
+  return isCreditCardAccountText(item.sender ?? '', text) ||
+    isCreditCardAccountText(item.bankId?.replace(/-\d+$/, '') ?? '', '');
 }
 
 export function classifyCardSms(body: string): CardDecision {

@@ -3,6 +3,7 @@ package expo.modules.finlifenative
 import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
+import android.app.ActivityManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
@@ -18,7 +19,6 @@ import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import com.googlecode.tesseract.android.TessBaseAPI
 import java.io.File
 import java.security.MessageDigest
-import java.util.concurrent.TimeUnit
 
 /** Scoped MediaStore access; never reads unrelated photo folders or uploads images. */
 internal object ScreenshotReader {
@@ -156,9 +156,20 @@ internal object ScreenshotReader {
   }
 
   @Synchronized
-  fun recognize(context: Context, value: String, malayalam: Boolean = false): String {
+  fun recognize(context: Context, value: String, malayalam: Boolean = false, compact: Boolean = false): String {
     val uri = localUri(context, value)
-    val bitmap = decodeOcrBitmap(context, uri)
+    if (compact) {
+      val memory = ActivityManager.MemoryInfo()
+      (context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager).getMemoryInfo(memory)
+      check(!memory.lowMemory && memory.availMem >= 128L * 1024 * 1024) {
+        "Not enough free memory to read this image while chat is loaded. Choose a smaller chat model and try again."
+      }
+    }
+    val bitmap = try {
+      decodeOcrBitmap(context, uri, compact)
+    } catch (error: OutOfMemoryError) {
+      throw IllegalStateException("Not enough memory to open this image. Try a smaller image or chat model.", error)
+    }
     try {
       if (malayalam) {
         val dataRoot = prepareMalayalamData(context)
@@ -178,31 +189,41 @@ internal object ScreenshotReader {
       }
       val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
       try {
-        return Tasks.await(recognizer.process(InputImage.fromBitmap(bitmap, 0)), 30, TimeUnit.SECONDS).text
+        // Do not recycle the bitmap while ML Kit is still reading it after a timeout.
+        return Tasks.await(recognizer.process(InputImage.fromBitmap(bitmap, 0))).text
       } finally {
         recognizer.close()
       }
+    } catch (error: OutOfMemoryError) {
+      throw IllegalStateException("Not enough memory for OCR. Try a smaller image or chat model.", error)
     } finally {
       bitmap.recycle()
     }
   }
 
-  private fun decodeOcrBitmap(context: Context, uri: Uri): Bitmap {
+  private fun decodeOcrBitmap(context: Context, uri: Uri, compact: Boolean): Bitmap {
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     context.contentResolver.openInputStream(uri)!!.use { BitmapFactory.decodeStream(it, null, bounds) }
     require(bounds.outWidth > 0 && bounds.outHeight > 0) { "Image cannot be decoded" }
     val options = BitmapFactory.Options().apply {
-      inSampleSize = 1
+      inSampleSize = OcrDecodeBudget.sampleSize(
+        bounds.outWidth, bounds.outHeight,
+        if (compact) OcrDecodeBudget.CHAT_MAX_EDGE else MAX_OCR_EDGE,
+        if (compact) OcrDecodeBudget.CHAT_MAX_PIXELS else MAX_OCR_EDGE.toLong() * MAX_OCR_EDGE,
+      )
       inPreferredConfig = Bitmap.Config.ARGB_8888
-    }
-    while (maxOf(bounds.outWidth, bounds.outHeight) / options.inSampleSize > MAX_OCR_EDGE) {
-      options.inSampleSize *= 2
+      inScaled = false
     }
     var bitmap = context.contentResolver.openInputStream(uri)!!.use {
       BitmapFactory.decodeStream(it, null, options)
     } ?: throw IllegalArgumentException("Image cannot be decoded")
-    bitmap = applyExifOrientation(context, uri, bitmap)
-    return ensureArgb8888(bitmap)
+    try {
+      bitmap = applyExifOrientation(context, uri, bitmap)
+      return ensureArgb8888(bitmap)
+    } catch (error: Throwable) {
+      bitmap.recycle()
+      throw error
+    }
   }
 
   private fun applyExifOrientation(context: Context, uri: Uri, bitmap: Bitmap): Bitmap {

@@ -17,6 +17,7 @@ import { canUseNativeLlm } from '@/utils/app-runtime';
 import type { ParsedItem } from '@/types/llm-output';
 import type { IncomingMessage } from '@/utils/bank-parsers';
 import { parseCompleteModelJson } from '@/utils/json-from-model';
+import { isModelTaskDraining, MODEL_TIMEOUT_MESSAGE, runModelTask } from '@/services/model-deadline';
 
 import { toInrText } from '@/utils/format-inr';
 import { transferLabel } from '@/utils/format-bytes';
@@ -76,6 +77,22 @@ let interruptVersion = 0;
 let resetCoachBeforeNextTurn = false;
 let coachSnapshotInSession: string | null = null;
 let coachUsers = 0;
+let activeTaskSignal: AbortSignal | undefined;
+
+function checkModelDeadline() {
+  if (activeTaskSignal?.aborted) throw new Error(MODEL_TIMEOUT_MESSAGE);
+}
+
+function modelExclusive<T>(work: () => Promise<T>): Promise<T> {
+  return runModelTask(async (signal) => {
+    activeTaskSignal = signal;
+    try { return await work(); } finally { activeTaskSignal = undefined; }
+  }, () => {
+    interruptVersion += 1;
+    resetCoachBeforeNextTurn = true;
+    session?.stop();
+  }, () => unloadSession());
+}
 
 function nativeApi() {
   return require('react-native-executorch') as typeof import('react-native-executorch');
@@ -272,6 +289,7 @@ function sessionPrompt(kind: SessionKind) {
 }
 
 async function ensureSession(onProgress: ProgressFn, kind: SessionKind): Promise<LLMChatSession> {
+  checkModelDeadline();
   if (coachHold && sessionKind === 'coach' && kind !== 'coach') {
     throw new Error('Leave the chat screen before running another model task.');
   }
@@ -354,6 +372,7 @@ async function loadSession(onProgress: ProgressFn, kind: SessionKind): Promise<L
 
   try {
     const cached = await downloadedModelConfig(settings);
+    checkModelDeadline();
     const createSession = kind === 'coach' ? createCoachLlmSession : createStatelessLlmSession;
     const chat = await createSession(cached, {
       resetOnTurn: false,
@@ -367,6 +386,10 @@ async function loadSession(onProgress: ProgressFn, kind: SessionKind): Promise<L
       stopRegex: kind === 'coach' ? /<\|im_end\|>|<\|endoftext\|>|<\|im_start\|>(?:user|system)/ : undefined,
     });
 
+    if (activeTaskSignal?.aborted) {
+      await forceUnload(chat);
+      throw new Error(MODEL_TIMEOUT_MESSAGE);
+    }
     if (session) {
       await forceUnload(chat);
       throw new Error('model-slot-busy');
@@ -495,7 +518,7 @@ async function inferUnmatched(
     return [];
   }
 
-  return exclusive(async () => {
+  return modelExclusive(async () => {
     onProgress(0.22, 'Opening the on-device model…');
     const chat = await ensureSession(onProgress, 'extract');
 
@@ -512,8 +535,10 @@ async function inferUnmatched(
         const result = await chat.sendMessage(userContent, undefined, {
           temperature: 0,
         });
+        checkModelDeadline();
         return parseCompleteModelJson(assistantText(result.messages, '')).items;
       } catch {
+        checkModelDeadline();
         return [];
       } finally {
         generating = false;
@@ -560,7 +585,7 @@ async function verifyMoneyMoves(
     return messages.map(() => true);
   }
 
-  return exclusive(async () => {
+  return modelExclusive(async () => {
     onProgress(0.78, 'Checking card and bill copies…');
     const chat = await ensureSession(onProgress, 'verify');
     const userContent = messages
@@ -572,6 +597,7 @@ async function verifyMoneyMoves(
       const result = await chat.sendMessage(userContent, undefined, {
         temperature: 0.1,
       });
+      checkModelDeadline();
       return parseKeepFlags(assistantText(result.messages, ''), messages.length);
     } finally {
       generating = false;
@@ -596,7 +622,7 @@ async function askCoach(
   const version = interruptVersion;
   const requestStartedAtMs = Date.now();
   coachHold = true;
-  return exclusive(async () => {
+  return modelExclusive(async () => {
     if (version !== interruptVersion) return '';
     generating = true;
     let streamed = '';
@@ -606,6 +632,7 @@ async function askCoach(
     let tokenTimer: ReturnType<typeof setTimeout> | undefined;
     const flushTokens = () => {
       tokenTimer = undefined;
+      if (version !== interruptVersion) return;
       lastTokenAt = Date.now();
       const visible = cleanCoachOutput(streamed);
       if (visible) {
@@ -663,6 +690,7 @@ async function askCoach(
         temperature: 0.2,
         maxNewTokens: 256,
       });
+      checkModelDeadline();
       if (currentSnapshot) {
         coachSnapshotInSession = currentSnapshot;
       }
@@ -687,6 +715,7 @@ async function askCoach(
     } catch (error) {
       clearTimeout(tokenTimer);
       resetCoachBeforeNextTurn = true;
+      checkModelDeadline();
       const partial = toInrText(cleanCoachOutput(streamed).replace(/```[\s\S]*?```/g, '').trim());
       if (partial) {
         onToken?.(partial);
@@ -705,12 +734,10 @@ async function acquireCoachSession(onProgress: ProgressFn): Promise<void> {
   if (!isAvailable() || !localSources()) {
     return;
   }
-  await exclusive(async () => {
-    try {
-      await ensureSession(onProgress, 'coach');
-    } catch {
-      // First send will retry load and surface a fallback if it still fails.
-    }
+  await modelExclusive(async () => {
+    if (coachUsers === 0) return;
+    // Surface startup failures so chat can offer a retry before the first send.
+    await ensureSession(onProgress, 'coach');
   });
 }
 
@@ -725,7 +752,7 @@ async function releaseCoachSession(): Promise<void> {
     // Idle or already released.
   }
   coachHold = false;
-  await exclusive(async () => {
+  const cleanup = exclusive(async () => {
     for (let attempt = 0; attempt < 40 && generating; attempt += 1) {
       await delay(50);
     }
@@ -734,6 +761,8 @@ async function releaseCoachSession(): Promise<void> {
     }
     await unloadSession();
   });
+  if (isModelTaskDraining()) { void cleanup.catch(() => undefined); return; }
+  await cleanup;
 }
 
 async function switchOnDeviceModel(onProgress: ProgressFn): Promise<void> {
@@ -741,7 +770,7 @@ async function switchOnDeviceModel(onProgress: ProgressFn): Promise<void> {
     throw new Error('unavailable');
   }
 
-  return exclusive(async () => {
+  return modelExclusive(async () => {
     for (let attempt = 0; attempt < 80 && generating; attempt += 1) {
       await delay(120);
     }
@@ -790,7 +819,12 @@ function getRamState(): LlmRamState {
 export function getLlmRuntime(): LlmRuntime {
   return {
     beginScan: () => { scanHold = true; },
-    endScan: async () => { scanHold = false; await exclusive(async () => { if (!coachHold) await unloadSession(); }); },
+    endScan: async () => {
+      scanHold = false;
+      const cleanup = exclusive(async () => { if (!coachHold) await unloadSession(); });
+      if (isModelTaskDraining()) { void cleanup.catch(() => undefined); return; }
+      await cleanup;
+    },
     getAvailability,
     inferUnmatched,
     verifyMoneyMoves,

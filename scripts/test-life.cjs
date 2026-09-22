@@ -56,7 +56,7 @@ const { toLedgerItem } = require('../types/ledger.ts');
 const { parseModelJson } = require('../utils/json-from-model.ts');
 const db = require('../services/database.ts');
 const { useTransactionStore } = require('../store/transaction-store.ts');
-const { listBankAccounts } = require('../utils/bank-account.ts');
+const { accountOf, extractBankAccount, inBankAccount, listBankAccounts } = require('../utils/bank-account.ts');
 const { relevantEvents, normalizeEvent } = require('../utils/relevant-events.ts');
 const { confirmedRenewals } = require('../utils/renewals.ts');
 const receipt = new Date(2026, 8, 7, 10).getTime();
@@ -131,6 +131,71 @@ test('dashboard balances urgent and upcoming plans, excludes transactions and ca
   assert.match(dayBriefFacts(groups), /today: event/);
   assert.equal(sanitizeDayBrief('**Netflix** renews soon!\n\nMore text.', localHomeBrief({ Today: [], Important: [], Overdue: [] })), 'Netflix renews soon! More text.');
   assert.match(sanitizeDayBrief('One item needs a quick review today.', 'Fallback.'), /security note is waiting/i);
+});
+
+test('bank detection accepts exact bank headers and ignores unknown senders, wallets and payee handles', () => {
+  for (const sender of ['HDFCBK', 'VM-HDFCBK-S', 'AX-HDFCBK']) {
+    assert.equal(extractBankAccount(sender, 'A/c XX1234 debited INR 100').id, 'hdfc-1234');
+  }
+  for (const sender of ['VM-AMAZON-S', 'VM-PHONEPE-S', 'GPAY', 'PAYTM', 'AIRTEL', 'HDFCBKREWARD']) {
+    assert.equal(extractBankAccount(sender, 'A/c XX1234 debited INR 100 to shop@oksbi').brandId, 'unknown');
+  }
+  assert.equal(extractBankAccount('VM-SBIINB-S', 'A/c XX1234 paid INR 100 to HDFC Bank').brandId, 'sbi');
+  assert.equal(extractBankAccount('TEST', 'Paid merchant@sbi INR 100').brandId, 'unknown');
+  assert.equal(extractBankAccount('TEST', 'Paid Bob INR 100').brandId, 'unknown');
+});
+
+test('bank names use the most specific recognized institution', () => {
+  for (const [name, id] of [['South Indian Bank', 'southindian'], ['City Union Bank', 'cityunion'],
+    ['Central Bank of India', 'central'], ['State Bank of India', 'sbi'], ['Bank of India', 'boi'],
+    ['Punjab & Sind Bank', 'psb'], ['Bank of Maharashtra', 'bom'], ['Kerala Gramin Bank', 'keralagramin']]) {
+    assert.equal(extractBankAccount('TEST', `${name} A/c XX1234 debited INR 100`).id, `${id}-1234`);
+  }
+  assert.equal(extractBankAccount('TEST', 'HDFC Bank account XX1234 debited to ICICI Bank').id, 'hdfc-1234');
+});
+
+test('saved bank labels are canonical and unknown records remain only in consolidated view', () => {
+  const base = { id: 'saved', type: 'transaction', amount: 100, date: '2026-09-07', category: 'other', note: '' };
+  const unknown = { ...base, bankId: 'random-1234', bankLabel: 'Random Bank' };
+  assert.equal(accountOf(unknown).brandId, 'unknown');
+  assert.deepEqual(listBankAccounts([unknown]), []);
+  assert.equal(inBankAccount(unknown, null), true);
+  assert.equal(inBankAccount(unknown, 'random-1234'), false);
+  assert.equal(accountOf({ ...base, bankId: 'hdfc', bankLabel: 'An invented name' }).label, 'HDFC Bank');
+  assert.equal(accountOf({ ...unknown, sender: 'VM-CANBNK-S', sourceBody: 'A/c XX9876 debited INR 100' }).id, 'canara-9876');
+});
+
+test('card-only alerts never become bank accounts, including saved issuer IDs without the original SMS', () => {
+  const base = { id: 'card', type: 'transaction', amount: 100, date: '2026-09-07', category: 'other', note: '', bankId: 'hdfc-1234' };
+  const cards = [
+    { ...base, sourceBody: 'HDFC Credit Card XX1234 spent INR 100' },
+    { ...base, sourceBody: 'HDFC Card ending in XX1234 used for INR 100' },
+    { ...base, sourceBody: 'HDFC Card XX1234 used for INR 100' },
+    { ...base, sender: 'VM-SBICRD-S', sourceBody: 'Spent INR 100 at Store' },
+    { ...base, bankId: 'sbicrd-1234' },
+    { ...base, bankLabel: 'HDFC Credit Card' },
+    { ...base, bankLabel: 'Kotak Card' },
+    { ...base, bankId: 'sbi', note: 'Debit from VM-SBICRD-S' },
+  ];
+  assert.deepEqual(listBankAccounts(cards), []);
+  for (const card of cards) assert.equal(accountOf(card).brandId, 'unknown');
+});
+
+test('debit-card and reference numbers do not create account suffixes; real account numbers do', () => {
+  const base = { id: 'debit', type: 'transaction', amount: 100, date: '2026-09-07', category: 'other', note: '', bankId: 'hdfc-1234' };
+  assert.equal(accountOf({ ...base, sourceBody: 'HDFC debit card XX1234 used for INR 100' }).id, 'hdfc');
+  assert.equal(accountOf({ ...base, sourceBody: 'A/c XX5678 debited INR 100 using debit card XX1234' }).id, 'hdfc-5678');
+  assert.equal(extractBankAccount('HDFCBK', 'INR 100 paid. Ref XX1234').id, 'hdfc');
+  assert.equal(extractBankAccount('HDFCBK', 'Account 123456789012 debited INR 100').id, 'hdfc-9012');
+  const account = (last4) => ({ ...base, sourceBody: `HDFC account XX${last4} debited INR 100` });
+  const now = new Date(2026, 8, 9);
+  assert.deepEqual(listBankAccounts([account('1234'), account('5678')], now).map((item) => item.id), ['hdfc-1234', 'hdfc-5678']);
+  const debit = { ...base, sourceBody: 'HDFC debit card XX9999 spent INR 100' };
+  const accounts = listBankAccounts([account('1234'), debit], now);
+  assert.equal(accounts.length, 1);
+  assert.equal(accounts[0].id, 'hdfc');
+  assert.equal(accounts[0].spend, 200);
+  assert.equal(accounts[0].count, 2);
 });
 
 test('finance excludes card and food-app records on load and scan without deleting originals', () => {
@@ -331,6 +396,25 @@ test('SQL persistence round trip, deduplication, corrections, and reset', async 
   await db.clearLedgerTables();
   assert.equal((await db.loadLifeItems()).length, 0);
   assert.deepEqual(await db.loadItemStates(), {});
+});
+
+test('reloading saved transactions fixes the account list without deleting records or requiring a rescan', async () => {
+  await db.clearLedgerTables();
+  const base = { type: 'transaction', amount: 100, date: '2026-09-07', category: 'other', note: '', merchant: 'Grocer' };
+  const rows = [
+    { ...base, id: 'bank', bankId: 'hdfc-1234', bankLabel: 'Wrong old label', sender: 'VM-HDFCBK-S', sourceBody: 'A/c XX5678 debited INR 100' },
+    { ...base, id: 'unknown', bankId: 'random', bankLabel: 'RANDOM' },
+    { ...base, id: 'card', bankId: 'sbi', bankLabel: 'State Bank of India', sender: 'VM-SBICRD-S', sourceBody: 'Spent INR 100 at Grocer' },
+  ];
+  await db.persistParsedBatch({ items: rows, processed: [] });
+  const restored = await db.loadTransactions();
+  assert.equal(restored.length, 3);
+  assert.deepEqual(listBankAccounts(restored).map((account) => account.label), ['HDFC Bank']);
+  assert.equal(accountOf(restored.find((item) => item.id === 'bank')).id, 'hdfc-5678');
+  useTransactionStore.getState().replaceAll(restored);
+  assert.deepEqual(useTransactionStore.getState().financeItems.map((item) => item.id).sort(), ['bank', 'unknown']);
+  useTransactionStore.getState().replaceAll([]);
+  await db.clearLedgerTables();
 });
 
 const { extractScreenshot } = require('../utils/screenshot-extraction.ts');
@@ -634,6 +718,54 @@ test('OCR splits around unidentified symbols but keeps ordinary punctuation', ()
   assert.doesNotMatch(ocrCoachQuestion('Rephrase this', 'Meeting tomorrow', 'en'), /Malayalam script/);
   assert.deepEqual(defaultImageFolders([{ name: 'Camera' }, { name: 'Screenshots' }]), ['Screenshots']);
   assert.deepEqual(defaultImageFolders([{ name: 'Camera' }]), ['Screenshots']);
+});
+
+test('chat and OCR keep three generic suggestions while adapting to the latest exchange', () => {
+  const { chatSuggestions, GENERIC_CHAT_SUGGESTIONS, latestSuggestionContext } = require('../utils/chat-suggestions.ts');
+  const thread = [
+    { role: 'user', text: 'Explain my flight ticket' },
+    { role: 'assistant', text: 'Your flight departs at 10.' },
+    { role: 'user', text: 'Help with this invoice' },
+    { role: 'assistant', text: 'The total amount is 200, due Friday.' },
+  ];
+  const prompts = chatSuggestions(latestSuggestionContext(thread));
+  assert.deepEqual(prompts.slice(0, 3), GENERIC_CHAT_SUGGESTIONS);
+  assert.ok(prompts.includes('Extract dates and amounts'));
+  assert.ok(!prompts.includes('List booking details'), 'Old topics must not leak into new suggestions');
+  assert.equal(new Set(prompts).size, prompts.length);
+  assert.ok(prompts.length <= 6);
+  const changed = chatSuggestions(latestSuggestionContext([
+    ...thread, { role: 'user', text: 'Help with my email' },
+  ]));
+  assert.ok(changed.includes('Draft a reply'));
+  assert.ok(!changed.includes('Extract dates and amounts'));
+  assert.deepEqual(chatSuggestions('').slice(0, 3), GENERIC_CHAT_SUGGESTIONS);
+  assert.ok(chatSuggestions('', 'Flight booking PNR ABC123').includes('List booking details'));
+});
+
+test('suggestions use the completed reply and remain stable during streaming', () => {
+  const { chatSuggestions, latestSuggestionContext } = require('../utils/chat-suggestions.ts');
+  const messages = [{ role: 'user', text: 'Help me understand this' }];
+  const before = latestSuggestionContext(messages);
+  messages.push({ role: 'assistant', text: 'Your flight booking', pending: true });
+  assert.equal(latestSuggestionContext(messages), before);
+  messages[1].text += ' is confirmed.';
+  assert.equal(latestSuggestionContext(messages), before);
+  messages[1].pending = false;
+  assert.ok(chatSuggestions(latestSuggestionContext(messages)).includes('List booking details'));
+});
+
+test('OCR suggestions can repeat the previous task on a new scan', () => {
+  const { chatSuggestions } = require('../utils/chat-suggestions.ts');
+  const { ocrCoachQuestion } = require('../utils/ocr-blocks.ts');
+  const context = ocrCoachQuestion('Extract dates and amounts', 'Invoice total 200 due Friday');
+  const prompts = chatSuggestions(context, 'Invoice total 300');
+  assert.ok(prompts.includes('Extract dates and amounts'));
+  assert.ok(!chatSuggestions(context).includes('Extract dates and amounts'));
+  assert.ok(prompts.includes('List payment deadlines'));
+  assert.ok(chatSuggestions(ocrCoachQuestion('Extract participant names', 'Attendees: Maya and Arun'), 'Attendees: Dev and Anu')
+    .includes('Extract participant names'));
+  assert.ok(chatSuggestions('Create an email from this', 'Hello there').includes('Draft a reply'));
 });
 
 test('image asks start a fresh chat and pins store a short Home summary', async () => {
@@ -1298,6 +1430,7 @@ test('coach disables native echo and reuses context without duplicating snapshot
   let replyLanguage;
   let systemPrompt = '';
   let remainingTokens = 8000;
+  let failCoachLoad = false;
   const sent = [];
   const measurements = [];
   const modules = {
@@ -1319,6 +1452,7 @@ test('coach disables native echo and reuses context without duplicating snapshot
     '@/utils/format-inr': { toInrText: (text) => text },
     '@/services/coach-llm-session': { createCoachLlmSession: async (_, options) => {
       loads += 1;
+      if (failCoachLoad) throw new Error('Model initialization failed');
       systemPrompt = options.initialMessages[0].content;
       assert.equal(options.generationConfig.echo, false);
       assert.equal(options.generationConfig.ignoreEos, false);
@@ -1345,6 +1479,9 @@ test('coach disables native echo and reuses context without duplicating snapshot
   vm.runInNewContext(code, { exports: output, require: (name) => modules[name] ?? {}, setTimeout, clearTimeout, Date });
   const runtime = output.getLlmRuntime();
   await runtime.acquireCoachSession(() => {});
+  assert.equal(loads, 1, 'Opening chat loads the model before any question is sent');
+  assert.equal(sent.length, 0, 'Startup must not generate a reply');
+  assert.equal(runtime.getRamState().loaded, true, 'Startup resolves with model weights in RAM');
   assert.match(systemPrompt, /\/no_think/);
   const prior = [{ role: 'user', text: 'Earlier question' }, { role: 'assistant', text: 'Answer.' }];
   const tokens = [];
@@ -1359,6 +1496,13 @@ test('coach disables native echo and reuses context without duplicating snapshot
     assert.equal(sent.at(-1), 'QUESTION\nFollow up');
   }
   assert.equal(loads, 1, 'A healthy context must not reload model weights every eight turns');
+  const { ocrCoachQuestion } = require('../utils/ocr-blocks.ts');
+  for (const excerpt of ['Invoice total 200', 'Flight booking PNR ABC123']) {
+    await runtime.askCoach(ocrCoachQuestion('Summarize this', excerpt), '', () => {}, prior);
+    assert.match(sent.at(-1), new RegExp(excerpt));
+    assert.equal(loads, 1, 'Repeated OCR in the same chat reuses model weights');
+    assert.equal(disposals, 0, 'Sending OCR must not release the chat model');
+  }
   remainingTokens = 800;
   await runtime.askCoach('Short follow up', 'Tasks: submit form', () => {}, prior);
   assert.equal(loads, 1, 'Short follow-ups must not reserve half the entire context');
@@ -1394,6 +1538,15 @@ test('coach disables native echo and reuses context without duplicating snapshot
   assert.equal(disposals, 2, 'Leaving releases model weights');
   assert.equal(runtime.getRamState().loaded, false);
   assert.equal(measurements.length, sent.length);
+  failCoachLoad = true;
+  await assert.rejects(runtime.acquireCoachSession(() => {}), /Model initialization failed/,
+    'Startup failures must reach the screen rather than silently waiting for the first send');
+  assert.equal(runtime.getRamState().loaded, false);
+  failCoachLoad = false;
+  await runtime.switchOnDeviceModel(() => {});
+  assert.equal(runtime.getRamState().loaded, true, 'Retry loads without requiring a message');
+  await runtime.releaseCoachSession();
+  assert.equal(runtime.getRamState().loaded, false, 'Retry must not add an extra session owner');
 });
 
 test('executorch 0.10 uses the unified API for chat and image generation', () => {

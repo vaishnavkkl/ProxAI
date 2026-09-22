@@ -2,7 +2,9 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { Image } from 'expo-image';
 import { useIsFocused } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Modal, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { Modal, StyleSheet, TextInput, View } from 'react-native';
+import { AppPressable as Pressable } from '@/components/app-pressable';
+
 import Animated, {
   Extrapolation,
   interpolate,
@@ -21,19 +23,15 @@ import { ScreenScaffold } from '@/components/screen-scaffold';
 import { useKeyboardInset } from '@/hooks/use-keyboard-inset';
 import { saveImagineImage } from '@/services/imagine-save';
 import {
-  DEFAULT_IMAGINE_DETAIL,
-  DEFAULT_IMAGINE_LOOK,
   IMAGINE_DETAILS,
   IMAGINE_LOOKS,
-  applyImagineStyle,
-  boostImaginePrompt,
+  enhanceImaginePrompt,
   hydrateImaginePrompt,
   imagineSuggestions,
   lastImaginePrompt,
   parseImagineSeed,
   randomImagineSeed,
   rememberImaginePrompt,
-  takeNextImaginePrompt,
   type ImagineDetailId,
   type ImagineLookId,
 } from '@/services/imagine-prompt';
@@ -59,6 +57,7 @@ import { useUiStore } from '@/store/ui-store';
 import { borderRadius, colors, gradients, layout, spacing } from '@/styles';
 import { formatBytes } from '@/utils/format-bytes';
 import { bottomSafeInset } from '@/utils/safe-area';
+import { paintFeedback } from '@/utils/paint-feedback';
 
 const PREVIEW_MAX = 216;
 const PREVIEW_DEFAULT = 168;
@@ -77,13 +76,13 @@ export function Imagine() {
   const imageBusy = useUiStore((s) => s.imageBusy);
   const mounted = useRef(true);
   const lastProgressAt = useRef(0);
-  const autoPrompt = useRef('');
+  const optionBase = useRef<string | null>(null);
   const scrollY = useSharedValue(0);
   const keyboardOpen = useSharedValue(0);
   const [prompt, setPrompt] = useState('');
   const [lastPrompt, setLastPrompt] = useState('');
-  const [look, setLook] = useState<ImagineLookId>(DEFAULT_IMAGINE_LOOK);
-  const [detail, setDetail] = useState<ImagineDetailId>(DEFAULT_IMAGINE_DETAIL);
+  const [look, setLook] = useState<ImagineLookId | null>(null);
+  const [detail, setDetail] = useState<ImagineDetailId | null>(null);
   const [seedText, setSeedText] = useState('');
   const [lastSeed, setLastSeed] = useState<number | null>(null);
   const [imageUri, setImageUri] = useState<string | null>(null);
@@ -144,20 +143,27 @@ export function Imagine() {
         return;
       }
       setLastPrompt(lastImaginePrompt());
-      setPrompt((current) => {
-        const last = lastImaginePrompt();
-        if (current && current !== autoPrompt.current && current !== last) {
-          return current;
-        }
-        const next = takeNextImaginePrompt();
-        autoPrompt.current = next;
-        return next;
-      });
     });
     return () => {
       cancelled = true;
     };
   }, [focused]);
+
+  function editPrompt(text: string) {
+    optionBase.current = null;
+    setLook(null);
+    setDetail(null);
+    setPrompt(text);
+  }
+
+  function selectOptions(nextLook: ImagineLookId | null, nextDetail: ImagineDetailId | null) {
+    // Rebuild only the text added by these controls; preserve the user's words.
+    const base = optionBase.current ?? prompt;
+    optionBase.current = base;
+    setLook(nextLook);
+    setDetail(nextDetail);
+    setPrompt(enhanceImaginePrompt(base, nextLook ?? '', nextDetail ?? ''));
+  }
 
   function onProgress(value: number, next: string) {
     if (!mounted.current) {
@@ -223,23 +229,17 @@ export function Imagine() {
       setToast({ kind: 'info', message: 'Wait for Refresh to finish, then generate.' });
       return;
     }
-    const scene = applyImagineStyle(prompt, look, detail);
-    const sent = boostImaginePrompt(scene, look, detail);
+    const sent = prompt.trim();
     if (!sent) {
       setToast({ kind: 'info', message: 'Write a short description first.' });
       return;
-    }
-    if (scene !== prompt) {
-      setPrompt(scene);
     }
     const used = parseImagineSeed(seedText) ?? randomImagineSeed();
     setBusy(true);
     setProgress(0.02);
     setLabel(cached ? 'Loading the image model…' : `Saving ${formatBytes(selected.downloadBytes)} first…`);
     try {
-      await new Promise<void>((resolve) => {
-        requestAnimationFrame(() => resolve());
-      });
+      await paintFeedback();
       if (!mounted.current) {
         return;
       }
@@ -373,7 +373,7 @@ export function Imagine() {
               accessibilityLabel="Custom image prompt"
               editable={!blocked}
               multiline
-              onChangeText={setPrompt}
+              onChangeText={editPrompt}
               placeholder="Describe the picture in your own words — a place, object, person, or scene."
               placeholderTextColor={colors.neutral[500]}
               style={styles.prompt}
@@ -387,7 +387,7 @@ export function Imagine() {
                   disabled={blocked}
                   key={item.id}
                   onPress={() => {
-                    setPrompt(applyImagineStyle(item.prompt, look, detail));
+                    editPrompt(item.prompt);
                   }}
                   style={[styles.chip, prompt === item.prompt ? styles.chipOn : undefined]}>
                   <Ionicons
@@ -404,7 +404,8 @@ export function Imagine() {
           </View>
 
           <View style={styles.card}>
-            <AppText variant="labelSmall">Look</AppText>
+            <AppText variant="labelSmall">Look · optional</AppText>
+            <AppText style={styles.hint} variant="caption">Options update your prompt. Only the text above is sent.</AppText>
             <View style={styles.chipRow}>
               {IMAGINE_LOOKS.map((item) => (
                 <Pressable
@@ -413,8 +414,7 @@ export function Imagine() {
                   disabled={blocked}
                   key={item.id}
                   onPress={() => {
-                    setLook(item.id);
-                    setPrompt((current) => applyImagineStyle(current, item.id, detail));
+                    selectOptions(look === item.id ? null : item.id, detail);
                   }}
                   style={[styles.chip, look === item.id ? styles.chipOn : undefined]}>
                   <Ionicons color={look === item.id ? colors.primary[600] : colors.neutral[700]} name={item.icon} size={16} />
@@ -424,7 +424,7 @@ export function Imagine() {
                 </Pressable>
               ))}
             </View>
-            <AppText variant="labelSmall">Detail</AppText>
+            <AppText variant="labelSmall">Detail · optional</AppText>
             <View style={styles.chipRow}>
               {IMAGINE_DETAILS.map((item) => (
                 <Pressable
@@ -433,8 +433,7 @@ export function Imagine() {
                   disabled={blocked}
                   key={item.id}
                   onPress={() => {
-                    setDetail(item.id);
-                    setPrompt((current) => applyImagineStyle(current, look, item.id));
+                    selectOptions(look, detail === item.id ? null : item.id);
                   }}
                   style={[styles.chip, detail === item.id ? styles.chipOn : undefined]}>
                   <Ionicons color={detail === item.id ? colors.primary[600] : colors.neutral[700]} name={item.icon} size={16} />
@@ -471,9 +470,9 @@ export function Imagine() {
                 onPress={() => {
                   setSeedText('');
                 }}
-                style={[styles.chip, seedText === '' ? styles.chipOn : undefined]}>
-                <Ionicons color={seedText === '' ? colors.primary[600] : colors.neutral[700]} name="shuffle-outline" size={16} />
-                <AppText style={seedText === '' ? styles.chipOnLabel : styles.chipLabel} variant="labelSmall">
+                style={styles.chip}>
+                <Ionicons color={colors.neutral[700]} name="shuffle-outline" size={16} />
+                <AppText style={styles.chipLabel} variant="labelSmall">
                   Random
                 </AppText>
               </Pressable>

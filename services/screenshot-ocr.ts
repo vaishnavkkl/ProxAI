@@ -1,5 +1,6 @@
 import { getFinlifeNative } from '@/services/finlife-native';
 import { useSettingsStore } from '@/store/settings-store';
+import { runOcrTask } from '@/services/ocr-deadline';
 
 export type OcrLanguage = 'en' | 'ml';
 
@@ -17,10 +18,10 @@ export async function recognizeImageText(
     if (!native?.recognizeMalayalamScreenshot) {
       throw new Error('Malayalam OCR needs the updated Android build. Run npx expo run:android once.');
     }
-    return native.recognizeMalayalamScreenshot(uri);
+    return runOcrTask(() => native.recognizeMalayalamScreenshot!(uri));
   }
   if (!native?.recognizeScreenshot) {
     throw new Error('Image OCR needs the updated Android development build.');
   }
-  return native.recognizeScreenshot(uri);
+  return runOcrTask(() => native.recognizeScreenshot!(uri));
 }

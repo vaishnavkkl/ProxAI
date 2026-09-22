@@ -1,6 +1,7 @@
 import { StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/app-text';
+import { LogoLoader } from '@/components/logo-loader';
 import { borderRadius, colors, spacing } from '@/styles';
 
 type ProgressMeterProps = {
@@ -13,9 +14,12 @@ export function ProgressMeter({ progress, label }: ProgressMeterProps) {
   return (
     <View style={styles.wrap}>
       {label ? (
-        <AppText accessibilityLiveRegion="polite" variant="bodySmall">
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+        <LogoLoader />
+        <AppText accessibilityLiveRegion="polite" variant="bodySmall" style={{ flex: 1 }}>
           {label}
         </AppText>
+        </View>
       ) : null}
       <View
         accessibilityLabel={`Progress ${percent} percent`}

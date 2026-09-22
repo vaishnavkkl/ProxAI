@@ -1,5 +1,9 @@
-import { Modal, Pressable, StyleSheet, View } from 'react-native';
+import { Modal, StyleSheet, View } from 'react-native';
+import { AppPressable as Pressable } from '@/components/app-pressable';
+
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import type { ComponentProps } from 'react';
 
 import { AppText } from '@/components/app-text';
 import { borderRadius, colors, spacing } from '@/styles';
@@ -8,6 +12,7 @@ export type DialogAction = {
   label: string;
   onPress: () => void;
   tone?: 'primary' | 'secondary' | 'danger';
+  icon?: ComponentProps<typeof Ionicons>['name'];
 };
 
 type AppDialogProps = {
@@ -43,6 +48,7 @@ export function AppDialog({ visible, title, message, actions, onClose }: AppDial
                 }}
                 style={[
                   styles.button,
+                  action.icon ? styles.iconButton : null,
                   useRowActions ? styles.buttonRow : null,
                   index > 0 && useRowActions ? styles.buttonRowDivider : null,
                   action.tone === 'danger'
@@ -51,6 +57,8 @@ export function AppDialog({ visible, title, message, actions, onClose }: AppDial
                       ? styles.primary
                       : styles.secondary,
                 ]}>
+                {action.icon ? <Ionicons name={action.icon} size={24}
+                  color={action.tone === 'danger' ? colors.semantic.danger : colors.primary[600]} /> : null}
                 <AppText
                   style={[
                     action.tone === 'secondary' || !action.tone ? styles.secondaryLabel : styles.primaryLabel,
@@ -114,6 +122,7 @@ const styles = StyleSheet.create({
   buttonRow: {
     flex: 1,
   },
+  iconButton: { flexDirection: 'row', gap: spacing.md },
   buttonRowDivider: {
     borderLeftWidth: 1,
     borderLeftColor: colors.neutral[200],

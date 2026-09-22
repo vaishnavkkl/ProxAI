@@ -1,6 +1,8 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Haptics from 'expo-haptics';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { AppPressable as Pressable } from '@/components/app-pressable';
+
 
 import { AppText } from '@/components/app-text';
 import { borderRadius, colors, gradients, spacing } from '@/styles';

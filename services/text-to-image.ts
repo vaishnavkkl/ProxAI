@@ -1,7 +1,8 @@
 import { Directory, File, Paths } from 'expo-file-system';
 
 import { finishDownloadNotice, reportDownloadNotice } from '@/services/download-notice';
-import { exclusiveInference, occupyInference, releaseInference } from '@/services/inference-slot';
+import { occupyInference, releaseInference } from '@/services/inference-slot';
+import { isModelTaskDraining, MODEL_DRAINING_MESSAGE, runModelTask } from '@/services/model-deadline';
 import { getLlmRuntime } from '@/services/llm-runtime';
 import type { ProgressFn } from '@/services/llm-runtime-types';
 import { downloadModelResources } from '@/services/model-download';
@@ -154,6 +155,7 @@ async function deletePipeline(current: SdxsRunner) {
 }
 
 export async function disposeTextToImage() {
+  if (generating) throw new Error('The image model is still stopping. Please try again shortly.');
   const current = moduleInstance;
   const variant = loadedVariant;
   moduleInstance = null;
@@ -245,6 +247,7 @@ async function downloadUnlocked(id: TtiVariantId, onProgress: ProgressFn) {
 }
 
 export async function downloadTextToImage(id: TtiVariantId, onProgress: ProgressFn) {
+  if (isModelTaskDraining()) throw new Error(MODEL_DRAINING_MESSAGE);
   ensureRegistered();
   if (!isTextToImageAvailable()) {
     throw new Error('unavailable');
@@ -347,6 +350,7 @@ export async function generateTextToImage(
   seed: number | undefined,
   onProgress: ProgressFn,
 ) {
+  if (isModelTaskDraining()) throw new Error(MODEL_DRAINING_MESSAGE);
   ensureRegistered();
   const trimmed = prompt.trim();
   if (!trimmed) {
@@ -363,7 +367,7 @@ export async function generateTextToImage(
   cancelled = false;
   if (!hasCachedTextToImage(id)) await downloadUnlocked(id, onProgress);
   throwIfStopped();
-  return exclusiveInference(async () => {
+  return runModelTask(async () => {
     if (generating) {
       throw new Error('An image is already being generated.');
     }
@@ -398,7 +402,12 @@ export async function generateTextToImage(
       }
       releaseImagineIfIdle();
     }
-  });
+  }, () => {
+    cancelled = true;
+    // SDXS has no native interrupt API. Discard its result and dispose only
+    // after generate settles; freeing a pipeline in flight can crash the app.
+    useUiStore.getState().setImageBusy(false);
+  }, () => disposeTextToImage());
 }
 
 ensureRegistered();

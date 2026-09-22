@@ -18,6 +18,7 @@ android {
 }
 
 dependencies {
+  testImplementation 'junit:junit:4.13.2'
   // Bundled Latin OCR: works offline on the first scan, without a model download.
   implementation 'com.google.mlkit:text-recognition:16.0.1'
   // Single-threaded to avoid competing with on-device chat for all CPU cores.

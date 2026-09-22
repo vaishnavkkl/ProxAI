@@ -1,5 +1,7 @@
 import { useState } from 'react';
-import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { StyleSheet, TextInput, View } from 'react-native';
+import { AppPressable as Pressable } from '@/components/app-pressable';
+
 import { openBrowserAsync, WebBrowserPresentationStyle } from 'expo-web-browser';
 
 import { AppText } from '@/components/app-text';

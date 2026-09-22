@@ -5,6 +5,8 @@ import { listMailAccounts, requestCalendarAccess } from '@/services/device-calen
 import { processRefreshMessages } from '@/services/llm-service';
 import { useSettingsStore } from '@/store/settings-store';
 import { useUiStore } from '@/store/ui-store';
+import { isModelTimeout } from '@/services/model-deadline';
+import { paintFeedback } from '@/utils/paint-feedback';
 
 let pendingMailPick: ((account: string | null) => void) | null = null;
 
@@ -46,6 +48,10 @@ export function useMessageRefresh() {
     }
 
     let skipMailScan = false;
+    setProcessing(true);
+    setWorkKind('scan');
+    setProgress(0.01, 'Preparing scan…');
+    await paintFeedback();
     try {
       await requestCalendarAccess();
       const accounts = await listMailAccounts();
@@ -108,10 +114,10 @@ export function useMessageRefresh() {
           ? `Read ${result.read ?? 0} SMS in this batch. Tap Refresh again for the rest.`
           : `Read ${result.read ?? 0} SMS. Nothing new in SMS, Calendar, or apps.`,
       });
-    } catch {
+    } catch (error) {
       setToast({
         kind: 'info',
-        message: 'Scan stopped early. Anything already found is saved. Tap Refresh to continue.',
+        message: isModelTimeout(error) ? (error as Error).message : 'Scan stopped early. Anything already found is saved. Tap Refresh to continue.',
       });
     } finally {
       setProcessing(false);

@@ -38,9 +38,9 @@ export function OcrCaptureSheet({ visible, uri, text, onClose, onAsk }: OcrCaptu
       }}
       title={asking ? 'Ask assistant' : 'Text from this image'}
       visible={visible}>
-      {!asking && uri ? <Image contentFit="contain" source={{ uri }} style={styles.preview} /> : null}
+      {visible && !asking && uri ? <Image cachePolicy="none" contentFit="contain" source={{ uri }} style={styles.preview} /> : null}
       {!asking ? <AppText variant="h4">Text from this photo</AppText> : null}
-      <OcrTextBlocks asking={asking} onAsk={onAsk} onAskingChange={setAsking} text={text} />
+      <OcrTextBlocks key={text} asking={asking} onAsk={onAsk} onAskingChange={setAsking} text={text} />
     </AppBottomSheet>
   );
 }

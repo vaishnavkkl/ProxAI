@@ -1,7 +1,9 @@
 import { AppBottomSheet } from '@/components/app-bottom-sheet';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useEffect, useState } from 'react';
-import { FlatList, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { FlatList, ScrollView, StyleSheet, View } from 'react-native';
+import { AppPressable as Pressable } from '@/components/app-pressable';
+
 
 import { AppText } from '@/components/app-text';
 import { FinanceAnalysis } from '@/components/finance-analysis';

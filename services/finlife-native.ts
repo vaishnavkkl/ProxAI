@@ -24,6 +24,9 @@ type FinlifeNativeModule = {
   getScreenshotHash?: (uri: string) => Promise<string>;
   recognizeScreenshot?: (uri: string) => Promise<string>;
   recognizeMalayalamScreenshot?: (uri: string) => Promise<string>;
+  beginChatOcr?: () => Promise<void>;
+  endChatOcr?: () => Promise<void>;
+  recognizeChatImage?: (uri: string, malayalam: boolean) => Promise<string>;
   saveGeneratedImage?: (uri: string) => Promise<string>;
 };
 

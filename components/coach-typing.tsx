@@ -1,5 +1,6 @@
-import { useEffect } from 'react';
-import { ActivityIndicator, Animated, StyleSheet, View, useAnimatedValue } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { LogoLoader as ActivityIndicator } from '@/components/logo-loader';
+
 
 import { AppText } from '@/components/app-text';
 import { borderRadius, colors, spacing } from '@/styles';
@@ -9,30 +10,9 @@ type CoachTypingProps = {
 };
 
 export function CoachTyping({ label }: CoachTypingProps) {
-  const pulse = useAnimatedValue(0.35);
-  const preparing = /loading|preparing|opening|waiting|checking/i.test(label);
-
-  useEffect(() => {
-    if (preparing) return;
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulse, { toValue: 1, duration: 420, useNativeDriver: true }),
-        Animated.timing(pulse, { toValue: 0.35, duration: 420, useNativeDriver: true }),
-      ]),
-    );
-    loop.start();
-    return () => {
-      loop.stop();
-    };
-  }, [pulse, preparing]);
-
   return (
     <View accessibilityLiveRegion="polite" accessibilityLabel={label || 'Preparing response'} style={styles.wrap}>
-      {preparing ? <ActivityIndicator color={colors.primary[500]} size="small" style={styles.spinner} /> : <View style={styles.dots}>
-        <Animated.View style={[styles.dot, { opacity: pulse }]} />
-        <Animated.View style={[styles.dot, styles.dotMid, { opacity: pulse }]} />
-        <Animated.View style={[styles.dot, { opacity: pulse }]} />
-      </View>}
+      <ActivityIndicator size="small" style={styles.spinner} />
       <AppText style={styles.label} variant="caption">
         {label || 'Preparing response…'}
       </AppText>

@@ -1,16 +1,18 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useState } from 'react';
-import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { StyleSheet, TextInput, View } from 'react-native';
+import { AppPressable as Pressable } from '@/components/app-pressable';
+
 import * as Clipboard from 'expo-clipboard';
 
 import { AppText } from '@/components/app-text';
 import { ensureChatModelForOcr } from '@/services/ocr-chat-model';
+import { useCoachStore } from '@/store/coach-store';
 import { useSettingsStore } from '@/store/settings-store';
 import { useUiStore } from '@/store/ui-store';
 import { borderRadius, colors, gradients, spacing } from '@/styles';
 import { ocrCoachQuestion, ocrTextBlocks, selectedOcrText, splitOcrBlocks } from '@/utils/ocr-blocks';
-
-const ASK_CHIPS = ['Rephrase this', 'Create an email from this', 'Summarize this', 'Extract dates and amounts'];
+import { chatSuggestions, latestSuggestionContext } from '@/utils/chat-suggestions';
 
 type OcrTextBlocksProps = {
   text: string;
@@ -28,6 +30,8 @@ export function OcrTextBlocks({ text, onAsk, asking: askingProp, onAskingChange 
   const setToast = useUiStore((s) => s.setToast);
   const ocrLanguage = useSettingsStore((s) => s.ocrLanguage);
   const excerpt = selectedOcrText(blocks, selected);
+  const chatContext = useCoachStore((s) => latestSuggestionContext(s.messages));
+  const suggestions = chatSuggestions(chatContext, excerpt);
   const picked = readable.filter((block) => selected[block.id]).length;
   const asking = askingProp ?? internalAsking;
 
@@ -93,7 +97,7 @@ export function OcrTextBlocks({ text, onAsk, asking: askingProp, onAskingChange 
         </AppText>
         <AppText variant="labelRegular">What should it do?</AppText>
         <View style={styles.chips}>
-          {ASK_CHIPS.map((chip) => (
+          {suggestions.map((chip) => (
             <Pressable
               accessibilityRole="button"
               key={chip}

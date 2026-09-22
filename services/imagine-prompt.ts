@@ -12,7 +12,7 @@ let promptHydrate: Promise<void> | null = null;
 export const IMAGINE_SEED_MAX = 2_147_483_647;
 
 export const IMAGINE_LOOKS = [
-  { id: 'natural', label: 'Natural', icon: 'leaf-outline', tokens: [] as string[] },
+  { id: 'natural', label: 'Natural', icon: 'leaf-outline', tokens: ['natural lighting'] },
   { id: 'photo', label: 'Photo', icon: 'camera-outline', tokens: ['photorealistic', '8k'] },
   { id: 'cinema', label: 'Cinema', icon: 'film-outline', tokens: ['cinematic lighting'] },
   { id: 'illustration', label: 'Illustration', icon: 'brush-outline', tokens: ['digital illustration'] },
@@ -22,7 +22,7 @@ export const IMAGINE_LOOKS = [
 
 export const IMAGINE_DETAILS = [
   { id: 'soft', label: 'Soft', icon: 'cloudy-outline', tokens: ['soft lighting'] },
-  { id: 'balanced', label: 'Balanced', icon: 'options-outline', tokens: [] as string[] },
+  { id: 'balanced', label: 'Balanced', icon: 'options-outline', tokens: ['balanced composition'] },
   { id: 'extra', label: 'Extra', icon: 'sparkles-outline', tokens: ['highly detailed', 'sharp focus'] },
 ] as const;
 
@@ -48,7 +48,7 @@ const STARTER_SUGGESTIONS: ImagineSuggestion[] = [
 ];
 
 const STYLE_TAIL =
-  /(?:,\s*)?(photorealistic|8k|cinematic lighting|digital illustration|watercolor|simple flat icon|soft lighting|highly detailed|sharp focus)(?:,\s*)?/gi;
+  /(?:,\s*)?(photorealistic|8k|cinematic lighting|digital illustration|watercolor|simple flat icon|soft lighting|highly detailed|sharp focus|natural lighting|balanced composition)(?:,\s*)?/gi;
 
 export function parseImagineSeed(value: string): number | undefined {
   const trimmed = value.trim();
@@ -91,14 +91,11 @@ const DETAIL_BOOST: Record<string, string> = {
 
 export function enhanceImaginePrompt(prompt: string, lookId: string, detailId: string) {
   const trimmed = prompt.trim();
-  if (!trimmed) {
-    return '';
-  }
   const lower = trimmed.toLowerCase();
   const extra = [...tokensForLook(lookId), ...tokensForDetail(detailId)].filter(
     (token) => !lower.includes(token.toLowerCase()),
   );
-  return extra.length ? `${trimmed}, ${extra.join(', ')}` : trimmed;
+  return [trimmed, ...extra].filter(Boolean).join(', ');
 }
 
 /** Stronger prompt sent to SDXS so the subject matches what the user typed. */

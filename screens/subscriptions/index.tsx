@@ -1,6 +1,8 @@
 ﻿import Ionicons from '@expo/vector-icons/Ionicons';
 import { useEffect, useState } from 'react';
-import { Pressable, SectionList, StyleSheet, View } from 'react-native';
+import { SectionList, StyleSheet, View } from 'react-native';
+import { AppPressable as Pressable } from '@/components/app-pressable';
+
 import { useRouter } from 'expo-router';
 import { SubscriptionIcon } from '@/components/subscription-icon';
 import { AppText } from '@/components/app-text';

@@ -6,10 +6,11 @@
     "start": "expo start",
     "reset-project": "node ./scripts/reset-project.js",
     "android": "node ./scripts/run-android.cjs",
+    "android:release": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-release.ps1",
     "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "test": "node --test scripts/test-life.cjs scripts/test-stateless-llm.cjs scripts/test-coach-llm-session.cjs scripts/test-model-download.cjs",
+    "test": "node --test scripts/test-life.cjs scripts/test-stateless-llm.cjs scripts/test-coach-llm-session.cjs scripts/test-model-download.cjs scripts/test-chat-ocr.cjs",
     "preinstall": "node scripts/ensure-native-install-tools.cjs",
     "postinstall": "node scripts/executorch-postinstall.cjs"
   },

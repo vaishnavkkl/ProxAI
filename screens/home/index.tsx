@@ -1,7 +1,10 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { type Href, useIsFocused, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { AppPressable as Pressable } from '@/components/app-pressable';
+import { LogoLoader as ActivityIndicator } from '@/components/logo-loader';
+
 
 import { AppDialog } from '@/components/app-dialog';
 import { AppText } from '@/components/app-text';
