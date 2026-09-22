@@ -5,6 +5,7 @@ import { DEFAULT_MODEL_ID, type ModelId } from '@/services/model-catalog';
 import { DEFAULT_WINDOWS, type ScheduleWindow } from '@/services/llm-schedule';
 import { DEFAULT_TTI_VARIANT, type TtiVariantId } from '@/services/text-to-image-catalog';
 import { markLookbackExpanded } from '@/services/scan-window';
+import type { OcrLanguage } from '@/services/screenshot-ocr';
 
 type SettingsState = AppSettings & {
   replaceAll: (settings: AppSettings) => void;
@@ -21,6 +22,7 @@ type SettingsState = AppSettings & {
   setGoogleAccount: (googleAccount: string) => void;
   setRemindersOn: (remindersOn: boolean) => void;
   setTtiVariantId: (ttiVariantId: TtiVariantId) => void;
+  setOcrLanguage: (ocrLanguage: OcrLanguage) => void;
 };
 
 export const useSettingsStore = create<SettingsState>((set) => ({
@@ -35,6 +37,11 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   googleAccount: '',
   remindersOn: true,
   ttiVariantId: DEFAULT_TTI_VARIANT,
+  ocrLanguage: 'en',
+  setOcrLanguage: (ocrLanguage) => {
+    set({ ocrLanguage });
+    void persistSetting('ocrLanguage', ocrLanguage);
+  },
   replaceAll: (settings) => set(settings),
   setOfflineMode: (offlineMode) => {
     set({ offlineMode });

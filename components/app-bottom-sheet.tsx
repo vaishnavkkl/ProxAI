@@ -1,7 +1,9 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { ReactNode } from 'react';
 import { useEffect } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Modal, ScrollView, StyleSheet, View } from 'react-native';
+import { AppPressable as Pressable } from '@/components/app-pressable';
+
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -29,25 +31,25 @@ export function AppBottomSheet({ visible, title, onClose, children, accessibilit
 
   useEffect(() => {
     if (visible) {
-      translateY.value = 0;
+      translateY.set(0);
     }
   }, [visible, translateY]);
 
   const pan = Gesture.Pan()
     .activeOffsetY(8)
     .onUpdate((event) => {
-      translateY.value = Math.max(0, event.translationY);
+      translateY.set(Math.max(0, event.translationY));
     })
     .onEnd((event) => {
       if (event.translationY > DISMISS_DISTANCE || event.velocityY > DISMISS_VELOCITY) {
         runOnJS(onClose)();
         return;
       }
-      translateY.value = withTiming(0, { duration: 200 });
+      translateY.set(withTiming(0, { duration: 200 }));
     });
 
   const sheetStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: translateY.value }],
+    transform: [{ translateY: translateY.get() }],
   }));
 
   return (
@@ -100,7 +102,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   backdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
   },
   sheet: {

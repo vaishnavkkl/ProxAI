@@ -50,12 +50,13 @@ Module._load = function (name, ...rest) {
 const { parseInbox } = require('../utils/parse-inbox.ts');
 const { extractMessageDate, localDay } = require('../utils/message-date.ts');
 const { securityReasons } = require('../utils/life-extraction.ts');
-const { agendaGroups, effectiveItem, dashboardHighlights } = require('../utils/life-agenda.ts');
+const { agendaGroups, dayBrief, effectiveItem, dashboardHighlights, glanceStatus, glanceWhen } = require('../utils/life-agenda.ts');
+const { dayBriefFacts, sanitizeDayBrief, localHomeBrief } = require('../utils/home-brief.ts');
 const { toLedgerItem } = require('../types/ledger.ts');
 const { parseModelJson } = require('../utils/json-from-model.ts');
 const db = require('../services/database.ts');
 const { useTransactionStore } = require('../store/transaction-store.ts');
-const { listBankAccounts } = require('../utils/bank-account.ts');
+const { accountOf, extractBankAccount, inBankAccount, listBankAccounts } = require('../utils/bank-account.ts');
 const { relevantEvents, normalizeEvent } = require('../utils/relevant-events.ts');
 const { confirmedRenewals } = require('../utils/renewals.ts');
 const receipt = new Date(2026, 8, 7, 10).getTime();
@@ -117,6 +118,84 @@ test('dashboard balances urgent and upcoming plans, excludes transactions and ca
   assert.ok(!ids.includes('bank'));
   assert.ok(!ids.includes('old-bill'));
   assert.ok(ids.includes('old-19'));
+  assert.doesNotMatch(dayBrief(groups), /needs a quick review|items need a review/i);
+  assert.match(dayBrief(groups), /is on today/);
+  assert.match(dayBrief({ Today: [], Tomorrow: [], 'Next 7 days': [{ type: 'subscription', merchant: 'Netflix' }], Important: [], Overdue: [] }), /Netflix renews soon/);
+  assert.equal(dayBrief({ Today: [], Tomorrow: [], 'Next 7 days': [], Important: [], Overdue: [] }), 'Your week looks calm — nothing needs you right now. Add a plan or refresh messages whenever you like.');
+  assert.match(dayBrief({ Today: [], Tomorrow: [], 'Next 7 days': [], Important: [], Overdue: [] }, { spend: 4250 }), /spent/);
+  assert.equal(glanceStatus(2, 1), '2 today');
+  assert.equal(glanceStatus(0, 1), '1 to review');
+  assert.equal(glanceStatus(0, 0), 'Caught up');
+  assert.equal(glanceWhen({ date: '2026-09-10' }, new Date('2026-09-10T09:00:00')), 'Today');
+  assert.match(glanceWhen({ date: '2026-09-11T14:00:00' }, new Date('2026-09-10T09:00:00')), /Tomorrow/);
+  assert.match(dayBriefFacts(groups), /today: event/);
+  assert.equal(sanitizeDayBrief('**Netflix** renews soon!\n\nMore text.', localHomeBrief({ Today: [], Important: [], Overdue: [] })), 'Netflix renews soon! More text.');
+  assert.match(sanitizeDayBrief('One item needs a quick review today.', 'Fallback.'), /security note is waiting/i);
+});
+
+test('bank detection accepts exact bank headers and ignores unknown senders, wallets and payee handles', () => {
+  for (const sender of ['HDFCBK', 'VM-HDFCBK-S', 'AX-HDFCBK']) {
+    assert.equal(extractBankAccount(sender, 'A/c XX1234 debited INR 100').id, 'hdfc-1234');
+  }
+  for (const sender of ['VM-AMAZON-S', 'VM-PHONEPE-S', 'GPAY', 'PAYTM', 'AIRTEL', 'HDFCBKREWARD']) {
+    assert.equal(extractBankAccount(sender, 'A/c XX1234 debited INR 100 to shop@oksbi').brandId, 'unknown');
+  }
+  assert.equal(extractBankAccount('VM-SBIINB-S', 'A/c XX1234 paid INR 100 to HDFC Bank').brandId, 'sbi');
+  assert.equal(extractBankAccount('TEST', 'Paid merchant@sbi INR 100').brandId, 'unknown');
+  assert.equal(extractBankAccount('TEST', 'Paid Bob INR 100').brandId, 'unknown');
+});
+
+test('bank names use the most specific recognized institution', () => {
+  for (const [name, id] of [['South Indian Bank', 'southindian'], ['City Union Bank', 'cityunion'],
+    ['Central Bank of India', 'central'], ['State Bank of India', 'sbi'], ['Bank of India', 'boi'],
+    ['Punjab & Sind Bank', 'psb'], ['Bank of Maharashtra', 'bom'], ['Kerala Gramin Bank', 'keralagramin']]) {
+    assert.equal(extractBankAccount('TEST', `${name} A/c XX1234 debited INR 100`).id, `${id}-1234`);
+  }
+  assert.equal(extractBankAccount('TEST', 'HDFC Bank account XX1234 debited to ICICI Bank').id, 'hdfc-1234');
+});
+
+test('saved bank labels are canonical and unknown records remain only in consolidated view', () => {
+  const base = { id: 'saved', type: 'transaction', amount: 100, date: '2026-09-07', category: 'other', note: '' };
+  const unknown = { ...base, bankId: 'random-1234', bankLabel: 'Random Bank' };
+  assert.equal(accountOf(unknown).brandId, 'unknown');
+  assert.deepEqual(listBankAccounts([unknown]), []);
+  assert.equal(inBankAccount(unknown, null), true);
+  assert.equal(inBankAccount(unknown, 'random-1234'), false);
+  assert.equal(accountOf({ ...base, bankId: 'hdfc', bankLabel: 'An invented name' }).label, 'HDFC Bank');
+  assert.equal(accountOf({ ...unknown, sender: 'VM-CANBNK-S', sourceBody: 'A/c XX9876 debited INR 100' }).id, 'canara-9876');
+});
+
+test('card-only alerts never become bank accounts, including saved issuer IDs without the original SMS', () => {
+  const base = { id: 'card', type: 'transaction', amount: 100, date: '2026-09-07', category: 'other', note: '', bankId: 'hdfc-1234' };
+  const cards = [
+    { ...base, sourceBody: 'HDFC Credit Card XX1234 spent INR 100' },
+    { ...base, sourceBody: 'HDFC Card ending in XX1234 used for INR 100' },
+    { ...base, sourceBody: 'HDFC Card XX1234 used for INR 100' },
+    { ...base, sender: 'VM-SBICRD-S', sourceBody: 'Spent INR 100 at Store' },
+    { ...base, bankId: 'sbicrd-1234' },
+    { ...base, bankLabel: 'HDFC Credit Card' },
+    { ...base, bankLabel: 'Kotak Card' },
+    { ...base, bankId: 'sbi', note: 'Debit from VM-SBICRD-S' },
+  ];
+  assert.deepEqual(listBankAccounts(cards), []);
+  for (const card of cards) assert.equal(accountOf(card).brandId, 'unknown');
+});
+
+test('debit-card and reference numbers do not create account suffixes; real account numbers do', () => {
+  const base = { id: 'debit', type: 'transaction', amount: 100, date: '2026-09-07', category: 'other', note: '', bankId: 'hdfc-1234' };
+  assert.equal(accountOf({ ...base, sourceBody: 'HDFC debit card XX1234 used for INR 100' }).id, 'hdfc');
+  assert.equal(accountOf({ ...base, sourceBody: 'A/c XX5678 debited INR 100 using debit card XX1234' }).id, 'hdfc-5678');
+  assert.equal(extractBankAccount('HDFCBK', 'INR 100 paid. Ref XX1234').id, 'hdfc');
+  assert.equal(extractBankAccount('HDFCBK', 'Account 123456789012 debited INR 100').id, 'hdfc-9012');
+  const account = (last4) => ({ ...base, sourceBody: `HDFC account XX${last4} debited INR 100` });
+  const now = new Date(2026, 8, 9);
+  assert.deepEqual(listBankAccounts([account('1234'), account('5678')], now).map((item) => item.id), ['hdfc-1234', 'hdfc-5678']);
+  const debit = { ...base, sourceBody: 'HDFC debit card XX9999 spent INR 100' };
+  const accounts = listBankAccounts([account('1234'), debit], now);
+  assert.equal(accounts.length, 1);
+  assert.equal(accounts[0].id, 'hdfc');
+  assert.equal(accounts[0].spend, 200);
+  assert.equal(accounts[0].count, 2);
 });
 
 test('finance excludes card and food-app records on load and scan without deleting originals', () => {
@@ -317,6 +396,25 @@ test('SQL persistence round trip, deduplication, corrections, and reset', async 
   await db.clearLedgerTables();
   assert.equal((await db.loadLifeItems()).length, 0);
   assert.deepEqual(await db.loadItemStates(), {});
+});
+
+test('reloading saved transactions fixes the account list without deleting records or requiring a rescan', async () => {
+  await db.clearLedgerTables();
+  const base = { type: 'transaction', amount: 100, date: '2026-09-07', category: 'other', note: '', merchant: 'Grocer' };
+  const rows = [
+    { ...base, id: 'bank', bankId: 'hdfc-1234', bankLabel: 'Wrong old label', sender: 'VM-HDFCBK-S', sourceBody: 'A/c XX5678 debited INR 100' },
+    { ...base, id: 'unknown', bankId: 'random', bankLabel: 'RANDOM' },
+    { ...base, id: 'card', bankId: 'sbi', bankLabel: 'State Bank of India', sender: 'VM-SBICRD-S', sourceBody: 'Spent INR 100 at Grocer' },
+  ];
+  await db.persistParsedBatch({ items: rows, processed: [] });
+  const restored = await db.loadTransactions();
+  assert.equal(restored.length, 3);
+  assert.deepEqual(listBankAccounts(restored).map((account) => account.label), ['HDFC Bank']);
+  assert.equal(accountOf(restored.find((item) => item.id === 'bank')).id, 'hdfc-5678');
+  useTransactionStore.getState().replaceAll(restored);
+  assert.deepEqual(useTransactionStore.getState().financeItems.map((item) => item.id).sort(), ['bank', 'unknown']);
+  useTransactionStore.getState().replaceAll([]);
+  await db.clearLedgerTables();
 });
 
 const { extractScreenshot } = require('../utils/screenshot-extraction.ts');
@@ -535,6 +633,17 @@ test('catalog keeps the recommended default and lists extra ExecuTorch exports',
   assert.equal(getCatalogModel('gemma4_e2b').sources.model.includes('/xnnpack/'), true);
 });
 
+test('chat answers from the user snapshot when the question is about them', () => {
+  const runtime = fs.readFileSync(path.join(root, 'services/llm-runtime-executorch.ts'), 'utf8');
+  const prompts = fs.readFileSync(path.join(root, 'utils/coach-prompts.ts'), 'utf8');
+  assert.match(runtime, /SNAPSHOT is their saved plans/);
+  assert.match(runtime, /answer from SNAPSHOT/);
+  assert.match(runtime, /saved plans on this phone/);
+  assert.match(runtime, /currentSnapshot && currentSnapshot !== coachSnapshotInSession/);
+  assert.match(runtime, /those stay in Finance/);
+  assert.match(prompts, /questionNeedsUserData/);
+});
+
 test('assistant prompts cover life and money', () => {
   const { detectCoachTopic, nextCoachPrompts } = require('../utils/coach-prompts.ts');
   const { coachSnapshot, buildSpendPlan, fallbackCoachReply, coachDisplayedReply } = require('../utils/spend-coach.ts');
@@ -557,6 +666,19 @@ test('assistant prompts cover life and money', () => {
   });
   assert.match(snapshot, /Tasks:/);
   assert.match(snapshot, /College form/);
+  assert.doesNotMatch(snapshot, /Paycheck|Spend rows|Bank accounts|₹/);
+  assert.doesNotMatch(nextCoachPrompts(null, plan).join('\n'), /income compare|₹|spend each day/i);
+  assert.equal(require('../utils/coach-prompts.ts').questionNeedsUserData('How much can I spend each day?'), false);
+  assert.equal(require('../utils/coach-prompts.ts').questionNeedsUserData('What tasks still need me?'), true);
+  const money = fallbackCoachReply(plan, 'How much can I spend each day?', life, now);
+  assert.match(money, /Finance/);
+  assert.doesNotMatch(money, /₹|40000|paycheck/i);
+  const picker = fs.readFileSync(path.join(root, 'components/model-picker.tsx'), 'utf8');
+  const coachUi = fs.readFileSync(path.join(root, 'screens/coach/index.tsx'), 'utf8');
+  assert.match(picker, /Malayalam supported/);
+  assert.doesNotMatch(picker, /മലയാളം/);
+  assert.match(coachUi, /Malayalam supported/);
+  assert.doesNotMatch(require('../services/model-catalog.ts').getCatalogModel('qwen3_0_6b_malayalam').label, /Malayalam ·/);
   const agenda = fallbackCoachReply(plan, 'What is on my agenda today?', life, now);
   assert.match(agenda, /College form/);
   assert.doesNotMatch(agenda, /On your list/);
@@ -588,8 +710,62 @@ test('OCR splits around unidentified symbols but keeps ordinary punctuation', ()
   assert.match(all, /KSEB bill/);
   assert.match(ocrCoachQuestion('Create an email from this', 'KSEB bill due 10 Sep'), /no image/);
   assert.match(ocrCoachQuestion('Create an email from this', 'KSEB bill due 10 Sep'), /Create an email/);
+  assert.match(ocrCoachQuestion('', 'KSEB bill due 10 Sep'), /KSEB bill due 10 Sep/);
+  assert.doesNotMatch(ocrCoachQuestion('', 'KSEB bill due 10 Sep'), /Rephrase this/);
+  assert.match(ocrUi, /useState\(''\)/);
+  assert.doesNotMatch(ocrUi, /useState\('Rephrase this'\)/);
+  assert.match(ocrCoachQuestion('Rephrase this', 'നാളെ മീറ്റിംഗ്', 'ml'), /Malayalam script/);
+  assert.doesNotMatch(ocrCoachQuestion('Rephrase this', 'Meeting tomorrow', 'en'), /Malayalam script/);
   assert.deepEqual(defaultImageFolders([{ name: 'Camera' }, { name: 'Screenshots' }]), ['Screenshots']);
   assert.deepEqual(defaultImageFolders([{ name: 'Camera' }]), ['Screenshots']);
+});
+
+test('chat and OCR keep three generic suggestions while adapting to the latest exchange', () => {
+  const { chatSuggestions, GENERIC_CHAT_SUGGESTIONS, latestSuggestionContext } = require('../utils/chat-suggestions.ts');
+  const thread = [
+    { role: 'user', text: 'Explain my flight ticket' },
+    { role: 'assistant', text: 'Your flight departs at 10.' },
+    { role: 'user', text: 'Help with this invoice' },
+    { role: 'assistant', text: 'The total amount is 200, due Friday.' },
+  ];
+  const prompts = chatSuggestions(latestSuggestionContext(thread));
+  assert.deepEqual(prompts.slice(0, 3), GENERIC_CHAT_SUGGESTIONS);
+  assert.ok(prompts.includes('Extract dates and amounts'));
+  assert.ok(!prompts.includes('List booking details'), 'Old topics must not leak into new suggestions');
+  assert.equal(new Set(prompts).size, prompts.length);
+  assert.ok(prompts.length <= 6);
+  const changed = chatSuggestions(latestSuggestionContext([
+    ...thread, { role: 'user', text: 'Help with my email' },
+  ]));
+  assert.ok(changed.includes('Draft a reply'));
+  assert.ok(!changed.includes('Extract dates and amounts'));
+  assert.deepEqual(chatSuggestions('').slice(0, 3), GENERIC_CHAT_SUGGESTIONS);
+  assert.ok(chatSuggestions('', 'Flight booking PNR ABC123').includes('List booking details'));
+});
+
+test('suggestions use the completed reply and remain stable during streaming', () => {
+  const { chatSuggestions, latestSuggestionContext } = require('../utils/chat-suggestions.ts');
+  const messages = [{ role: 'user', text: 'Help me understand this' }];
+  const before = latestSuggestionContext(messages);
+  messages.push({ role: 'assistant', text: 'Your flight booking', pending: true });
+  assert.equal(latestSuggestionContext(messages), before);
+  messages[1].text += ' is confirmed.';
+  assert.equal(latestSuggestionContext(messages), before);
+  messages[1].pending = false;
+  assert.ok(chatSuggestions(latestSuggestionContext(messages)).includes('List booking details'));
+});
+
+test('OCR suggestions can repeat the previous task on a new scan', () => {
+  const { chatSuggestions } = require('../utils/chat-suggestions.ts');
+  const { ocrCoachQuestion } = require('../utils/ocr-blocks.ts');
+  const context = ocrCoachQuestion('Extract dates and amounts', 'Invoice total 200 due Friday');
+  const prompts = chatSuggestions(context, 'Invoice total 300');
+  assert.ok(prompts.includes('Extract dates and amounts'));
+  assert.ok(!chatSuggestions(context).includes('Extract dates and amounts'));
+  assert.ok(prompts.includes('List payment deadlines'));
+  assert.ok(chatSuggestions(ocrCoachQuestion('Extract participant names', 'Attendees: Maya and Arun'), 'Attendees: Dev and Anu')
+    .includes('Extract participant names'));
+  assert.ok(chatSuggestions('Create an email from this', 'Hello there').includes('Draft a reply'));
 });
 
 test('image asks start a fresh chat and pins store a short Home summary', async () => {
@@ -684,7 +860,7 @@ test('chat unloads the previous model before loading a downloaded one', () => {
   const coach = fs.readFileSync(path.join(root, 'screens/coach/index.tsx'), 'utf8');
   const runtime = fs.readFileSync(path.join(root, 'services/llm-runtime-executorch.ts'), 'utf8');
   assert.match(coach, /hasCachedSources/);
-  assert.match(coach, /CATALOG/);
+  assert.match(coach, /chatModelsForOcr/);
   assert.match(coach, /switchOnDeviceModel/);
   assert.match(coach, /Start a new chat/);
   const switchFn = runtime.slice(runtime.indexOf('async function switchOnDeviceModel'), runtime.indexOf('async function unloadFromMemory'));
@@ -744,9 +920,119 @@ test('one native model slot: LLM load unloads vision, image gen unloads the LLM'
   assert.match(tti, /releaseLlmSlot/);
   assert.match(tti, /occupyInference\('tti'\)/);
   assert.match(tti, /createSdxsTextToImage/);
+  assert.doesNotMatch(tti, /from '@\/services\/llm-service'/);
   assert.doesNotMatch(tti, /cancelFetching/);
   assert.doesNotMatch(tti, /unloadModelFromMemory/);
   assert.match(slot, /Nested calls deadlock/);
+  const brief = fs.readFileSync(path.join(root, 'services/home-brief.ts'), 'utf8');
+  assert.doesNotMatch(brief, /text-to-image/);
+  assert.match(brief, /store\.imageBusy/);
+});
+
+test('home greeting uses a typed brief and keeps OCR chat and imagine tiles', () => {
+  const life = fs.readFileSync(path.join(root, 'components/life-agenda.tsx'), 'utf8');
+  const home = fs.readFileSync(path.join(root, 'screens/home/index.tsx'), 'utf8');
+  const scan = fs.readFileSync(path.join(root, 'services/llm-service.ts'), 'utf8');
+  assert.doesNotMatch(life, /Your day at a glance/);
+  assert.doesNotMatch(life, /styles\.digest/);
+  assert.match(home, /greeting\(\)/);
+  assert.match(home, /TypedLine/);
+  assert.match(home, /replayToken/);
+  assert.match(home, /useIsFocused/);
+  assert.match(home, /briefSlot/);
+  assert.match(home, /numberOfLines=\{3\}/);
+  assert.doesNotMatch(home, /header=\{<DashboardHeader/);
+  assert.match(home, /refreshHomeBrief/);
+  const typed = fs.readFileSync(path.join(root, 'components/typed-line.tsx'), 'utf8');
+  assert.match(typed, /replayToken/);
+  assert.match(typed, /nextDelay/);
+  assert.match(typed, /numberOfLines = 3/);
+  assert.doesNotMatch(typed, /absoluteFill/);
+  assert.doesNotMatch(typed, /styles\.measure/);
+  assert.doesNotMatch(life, /\{header\}/);
+  assert.match(scan, /refreshHomeBrief/);
+  assert.match(life, /IMAGE INTELLIGENCE/);
+  assert.match(life, /PERSONAL ASSISTANT/);
+  assert.match(life, /TEXT TO IMAGE/);
+  const imagine = fs.readFileSync(path.join(root, 'screens/imagine/index.tsx'), 'utf8');
+  const coach = fs.readFileSync(path.join(root, 'screens/coach/index.tsx'), 'utf8');
+  assert.match(imagine, /ImagineGenerating/);
+  assert.match(imagine, /Your prompt/);
+  assert.match(imagine, /recipe number/);
+  assert.match(imagine, /ModelRamCaption/);
+  assert.match(coach, /ModelRamCaption/);
+});
+
+test('imagine composes look and detail tokens and parses seeds', () => {
+  const {
+    enhanceImaginePrompt,
+    applyImagineStyle,
+    boostImaginePrompt,
+    parseImagineSeed,
+    imagineSuggestions,
+    imagineSceneBase,
+    nextImaginePrompt,
+    DEFAULT_IMAGINE_LOOK,
+    DEFAULT_IMAGINE_DETAIL,
+  } = require('../services/imagine-prompt.ts');
+  assert.equal(parseImagineSeed(''), undefined);
+  assert.equal(parseImagineSeed('42'), 42);
+  assert.equal(parseImagineSeed('abc'), undefined);
+  assert.equal(DEFAULT_IMAGINE_LOOK, 'photo');
+  assert.equal(DEFAULT_IMAGINE_DETAIL, 'balanced');
+  assert.equal(
+    enhanceImaginePrompt('A cup of chai', 'photo', 'balanced'),
+    'A cup of chai, photorealistic, 8k',
+  );
+  assert.equal(
+    enhanceImaginePrompt('A photorealistic cup of chai, 8k', 'photo', 'balanced'),
+    'A photorealistic cup of chai, 8k',
+  );
+  assert.equal(applyImagineStyle('book', 'photo', 'balanced'), 'book, photorealistic, 8k');
+  assert.equal(applyImagineStyle('book, photorealistic, 8k', 'cinema', 'extra'), 'book, cinematic lighting, highly detailed, sharp focus');
+  assert.equal(applyImagineStyle('book, cinematic lighting', 'natural', 'balanced'), 'book');
+  assert.match(boostImaginePrompt('book', 'photo', 'balanced'), /photorealistic photograph of book/i);
+  assert.match(boostImaginePrompt('book', 'photo', 'balanced'), /centered subject/);
+  assert.match(boostImaginePrompt('A Kerala backwater', 'watercolor', 'extra'), /watercolor painting of Kerala backwater/i);
+  assert.match(boostImaginePrompt('A Kerala backwater', 'watercolor', 'extra'), /highly detailed/);
+  assert.equal(imagineSuggestions('')[0].label, 'Backwater');
+  assert.deepEqual(
+    imagineSuggestions('A watercolor Kerala backwater at dusk').map((item) => item.label),
+    ['Closer', 'Night', 'Rain', 'Wider'],
+  );
+  assert.equal(imagineSceneBase('A close-up of A Kerala backwater, photorealistic, 8k'), 'A Kerala backwater');
+  assert.match(nextImaginePrompt('A Kerala backwater', 0), /close-up/i);
+  assert.match(nextImaginePrompt('A Kerala backwater', 1), /at night/i);
+  assert.notEqual(nextImaginePrompt('A Kerala backwater', 0), nextImaginePrompt('A Kerala backwater', 1));
+  const imagineScreen = fs.readFileSync(path.join(root, 'screens/imagine/index.tsx'), 'utf8');
+  const generating = fs.readFileSync(path.join(root, 'components/imagine-generating.tsx'), 'utf8');
+  const hydrate = fs.readFileSync(path.join(root, 'services/hydrate.ts'), 'utf8');
+  assert.match(imagineScreen, /saveImagineImage/);
+  assert.match(imagineScreen, /imagineSuggestions/);
+  assert.match(imagineScreen, /useAnimatedScrollHandler/);
+  assert.match(imagineScreen, /PREVIEW_MAX/);
+  assert.match(imagineScreen, /takeNextImaginePrompt/);
+  assert.match(imagineScreen, /rememberImaginePrompt/);
+  assert.match(imagineScreen, /applyImagineStyle/);
+  assert.match(imagineScreen, /boostImaginePrompt/);
+  assert.match(imagineScreen, /generateTextToImage\(sent/);
+  assert.match(hydrate, /hydrateImaginePrompt/);
+  assert.match(generating, /Creating image/);
+  assert.match(generating, /imagineStudio/);
+  assert.match(generating, /IMAGINE_SHEET = 512/);
+  assert.match(generating, /COLS = 16/);
+  assert.match(generating, /PixelCell/);
+  assert.match(imagineScreen, /previewSheet/);
+  assert.match(imagineScreen, /requestAnimationFrame/);
+  assert.doesNotMatch(generating, /react-native-reanimated/);
+  assert.doesNotMatch(generating, /BlurWave/);
+  assert.doesNotMatch(generating, /Traveler/);
+  assert.doesNotMatch(generating, /styles\.track/);
+  assert.doesNotMatch(generating, /FiringPixel/);
+  assert.doesNotMatch(generating, /NeuronNode/);
+  const toast = fs.readFileSync(path.join(root, 'components/notification-toast.tsx'), 'utf8');
+  assert.match(toast, /TOAST_MS = 2500/);
+  assert.doesNotMatch(toast, /toast\.kind === 'info'/);
 });
 
 test('image download stop cancels the resource fetcher, not only interrupt', () => {
@@ -761,6 +1047,10 @@ test('image download stop cancels the resource fetcher, not only interrupt', () 
   assert.match(tti, /TTI_STOPPED/);
   assert.match(tti, /attachImagine/);
   assert.match(tti, /detachImagine/);
+  const detach = tti.slice(tti.indexOf('export function detachImagine'), tti.indexOf('function throwIfStopped'));
+  assert.match(detach, /unloadImaginePipeline/);
+  assert.match(detach, /imagineViews > 0/);
+  assert.doesNotMatch(detach, /downloadAbort\?\.abort/);
   assert.match(imagine, /interruptTextToImage/);
   assert.match(imagine, /ScreenBack/);
   assert.match(imagine, /attachImagine/);
@@ -786,21 +1076,32 @@ test('chat streams tokens and stack screens share the same back control', () => 
   assert.match(coach, /interruptCoach/);
   assert.doesNotMatch(coach, /!focused \?/);
   assert.match(screenshots, /ScreenBack/);
+  assert.match(screenshots, /start=\{<ScreenBack/);
+  assert.doesNotMatch(screenshots, /<ScreenBack[\s\S]*<SectionHero/);
   assert.match(back, /chevron-back/);
+  assert.match(back, /tone = 'light'/);
+  assert.match(back, /btnInverse/);
+  assert.match(back, />\s*Back\s*</);
+  const hero = fs.readFileSync(path.join(root, 'components/section-hero.tsx'), 'utf8');
+  assert.match(hero, /start \? iconTile/);
+  assert.match(hero, /no-hide-descendants/);
   assert.match(notice, /reportDownloadNotice/);
   assert.match(notice, /channelId: CHANNEL/);
   assert.match(runtime, /reportDownloadNotice/);
   assert.match(tti, /reportDownloadNotice/);
 });
 
-test('downloads show transferred size and retry a network abort', () => {
+test('downloads show transferred size and do not automatically restart failed transfers', () => {
   const { formatBytes, transferLabel } = require('../utils/format-bytes.ts');
   const tti = fs.readFileSync(path.join(root, 'services/text-to-image.ts'), 'utf8');
   const runtime = fs.readFileSync(path.join(root, 'services/llm-runtime-executorch.ts'), 'utf8');
   const imagine = fs.readFileSync(path.join(root, 'screens/imagine/index.tsx'), 'utf8');
   assert.match(formatBytes(10 * 1024 * 1024), /10 MB/);
+  const { formatRamMb } = require('../utils/format-bytes.ts');
+  assert.equal(formatRamMb(820), '820 MB');
+  assert.equal(formatRamMb(1536), '1.5 GB');
   assert.match(transferLabel('SDXS 512 DreamShaper XNNPACK FP32', 82_000_000, 1_640_000_000, 0.05), /\/|%/);
-  assert.match(tti, /download\(/);
+  assert.match(tti, /downloadModelResources\(/);
   assert.match(tti, /AbortController/);
   const downloadFn = tti.slice(tti.indexOf('async function downloadUnlocked'), tti.indexOf('export async function downloadTextToImage'));
   assert.doesNotMatch(downloadFn, /releaseLlmSlot/);
@@ -808,7 +1109,7 @@ test('downloads show transferred size and retry a network abort', () => {
   assert.doesNotMatch(runtime, /cacheTokenizerSources/);
   assert.match(fs.readFileSync(path.join(root, 'services/model-storage.ts'), 'utf8'), /export async function cacheSidecarFile/);
   assert.match(runtime, /transferLabel/);
-  assert.match(runtime, /isNetworkAbort/);
+  assert.doesNotMatch(runtime, /isNetworkAbort|attempt < 2/);
   assert.match(imagine, /formatBytes/);
   assert.match(imagine, /Save /);
 });
@@ -825,8 +1126,427 @@ test('free app memory lives on the activity sheet, not Settings', () => {
   assert.match(settings, /tagTone="image"/);
   assert.match(settings, /App resources/);
   assert.match(settings, /ImageModelPicker/);
-  assert.match(settings, /title="Remove downloaded models"/);
+  assert.match(settings, /title="Choose a model to remove"/);
+  assert.match(settings, /listRemovableLanguageModels/);
+  assert.match(settings, /removeCachedModelSources/);
+  assert.doesNotMatch(settings, /clearDownloadedModels/);
   assert.doesNotMatch(settings, /push\('\/imagine'/);
+});
+
+test('model repetition guard trims loops but keeps normal repetition and lists', () => {
+  const { trimModelLoop } = require('../utils/model-repetition.ts');
+  assert.equal(trimModelLoop('Pay the electricity bill. Pay the electricity bill. Pay the electricity bill.'), 'Pay the electricity bill.');
+  assert.equal(trimModelLoop('Hello hello hello hello hello hello'), 'Hello');
+  assert.equal(trimModelLoop('Very very helpful. Pay rent today. Pay electricity tomorrow.'), null);
+  assert.equal(trimModelLoop('January 100 February 100 March 100 April 100'), null);
+});
+
+test('Malayalam OCR routes explicitly, keeps language caches separate and retries after an old native build', async () => {
+  await resetScanTest();
+  const { useSettingsStore } = require('../store/settings-store.ts');
+  const { recognizeImageText } = require('../services/screenshot-ocr.ts');
+  const { scanScreenshots, listScreenshotScans } = require('../services/screenshot-scanner.ts');
+  process.env.EXPO_OS = 'android';
+  const previous = useSettingsStore.getState().ocrLanguage;
+  const asset = { id: '901', uri: 'content://media/901', revision: '1', capturedAt: receipt, name: 'Malayalam.png' };
+  let englishCalls = 0, malayalamCalls = 0;
+  nativeTest.getScreenshotPage = async (_since, _until, after) => after ? [] : [asset];
+  nativeTest.getScreenshotHash = async () => 'malayalam-routing-test';
+  nativeTest.recognizeScreenshot = async () => { englishCalls++; return 'English text'; };
+  delete nativeTest.recognizeMalayalamScreenshot;
+  try {
+    useSettingsStore.setState({ ocrLanguage: 'en' });
+    await scanScreenshots(new Date(2026, 8, 1));
+    assert.equal(englishCalls, 1);
+    useSettingsStore.setState({ ocrLanguage: 'ml' });
+    await assert.rejects(recognizeImageText(asset.uri), /updated Android build/);
+    assert.equal((await scanScreenshots(new Date(2026, 8, 1))).errors, 1);
+    nativeTest.recognizeMalayalamScreenshot = async () => { malayalamCalls++; return 'നാളെ രാവിലെ മീറ്റിംഗ് ഉണ്ട്. Invoice INR 100'; };
+    let inferred = '';
+    await scanScreenshots(new Date(2026, 8, 1), () => {}, async (messages) => { inferred = messages[0].body; return []; });
+    assert.match(inferred, /നാളെ രാവിലെ/);
+    assert.equal(malayalamCalls, 1);
+    assert.equal(englishCalls, 1, 'Malayalam mode must not run Latin OCR too');
+    assert.match((await listScreenshotScans(new Date(2026, 8, 1)))[0].text, /നാളെ രാവിലെ/);
+    await scanScreenshots(new Date(2026, 8, 1));
+    assert.equal(malayalamCalls, 1, 'Unchanged Malayalam images stay cached');
+    useSettingsStore.setState({ ocrLanguage: 'en' });
+    await scanScreenshots(new Date(2026, 8, 1));
+    assert.equal(englishCalls, 1, 'Switching back reuses the existing English extraction');
+  } finally {
+    useSettingsStore.setState({ ocrLanguage: previous });
+    delete nativeTest.recognizeMalayalamScreenshot;
+  }
+});
+
+test('Malayalam OCR preference persists and older installations default to Latin', async () => {
+  const { loadAppSettings, persistSetting } = require('../services/settings-persist.ts');
+  const previous = (await loadAppSettings()).ocrLanguage;
+  try {
+    await persistSetting('ocrLanguage', 'ml');
+    assert.equal((await loadAppSettings()).ocrLanguage, 'ml');
+    await db.setScanMeta('ocr_language', 'unknown');
+    assert.equal((await loadAppSettings()).ocrLanguage, 'en');
+  } finally { await persistSetting('ocrLanguage', previous); }
+});
+
+test('Malayalam model preset shares verified Qwen3 files and Malayalam text survives processing', () => {
+  const { getCatalogModel, chatCatalogForOcr, isMalayalamChatModel } = require('../services/model-catalog.ts');
+  const preset = getCatalogModel('qwen3_0_6b_malayalam');
+  assert.equal(preset.defaultReplyLanguage, 'ml');
+  assert.deepEqual(preset.sources, getCatalogModel('qwen3_0_6b').sources);
+  assert.equal(isMalayalamChatModel('qwen3_0_6b_malayalam'), true);
+  assert.equal(isMalayalamChatModel('qwen2_5_0_5b'), false);
+  assert.ok(chatCatalogForOcr('ml').every((item) => item.malayalam || item.id === 'custom'));
+  assert.ok(chatCatalogForOcr('ml').some((item) => item.id === 'qwen3_0_6b_malayalam'));
+  assert.ok(chatCatalogForOcr('en').some((item) => item.id === 'qwen2_5_0_5b'));
+  const { useSettingsStore } = require('../store/settings-store.ts');
+  const { ensureChatModelForOcr } = require('../services/ocr-chat-model.ts');
+  const previousModel = useSettingsStore.getState().modelId;
+  const previousOcr = useSettingsStore.getState().ocrLanguage;
+  try {
+    useSettingsStore.setState({ modelId: 'qwen2_5_0_5b', ocrLanguage: 'ml' });
+    assert.equal(ensureChatModelForOcr(), 'qwen3_0_6b_malayalam');
+    assert.equal(useSettingsStore.getState().modelId, 'qwen3_0_6b_malayalam');
+  } finally {
+    useSettingsStore.getState().setModelId(previousModel);
+    useSettingsStore.getState().setOcrLanguage(previousOcr);
+  }
+  const picker = fs.readFileSync(path.join(root, 'components/ocr-language-picker.tsx'), 'utf8');
+  const ocrUi = fs.readFileSync(path.join(root, 'components/ocr-text-blocks.tsx'), 'utf8');
+  const shots = fs.readFileSync(path.join(root, 'screens/screenshots/index.tsx'), 'utf8');
+  const coach = fs.readFileSync(path.join(root, 'screens/coach/index.tsx'), 'utf8');
+  assert.match(picker, /languageCardOn/);
+  assert.match(picker, /earth-outline|അ/);
+  assert.match(picker, /ensureChatModelForOcr/);
+  assert.match(ocrUi, /ensureChatModelForOcr/);
+  assert.match(shots, /progressDock/);
+  assert.match(shots, /languageCard/);
+  assert.match(shots, /From gallery/);
+  assert.match(shots, /From camera/);
+  assert.doesNotMatch(shots, /actionRow/);
+  assert.match(coach, /chatModelsForOcr/);
+  assert.match(coach, /ensureChatModelForOcr/);
+  const { trimModelLoop } = require('../utils/model-repetition.ts');
+  const text = 'നാളെ രാവിലെ മീറ്റിംഗ് ഉണ്ട്.';
+  assert.equal(trimModelLoop(`${text} ${text} ${text}`), text);
+  assert.equal(trimModelLoop(text), null);
+  assert.equal(require('../utils/model-output.ts').cleanCoachOutput(`<|im_start|>assistant\n${text}<|im_end|>`), text);
+  assert.equal(require('../utils/ocr-blocks.ts').ocrTextBlocks(text)[0].text, text);
+  assert.equal(require('../utils/message-filter.ts').isWorthLlm(message(text)), true);
+  const { selectCoachSnapshot } = require('../utils/coach-prompts.ts');
+  const relevant = selectCoachSnapshot(`Month: September\nSpend rows: ${'Purchase 100; '.repeat(150)}\nTasks: Submit form\nTravel: Train tomorrow`, 'എനിക്ക് ചെയ്യാനുള്ള കാര്യങ്ങൾ എന്തൊക്കെയാണ്?');
+  assert.match(relevant, /Submit form/);
+  assert.doesNotMatch(relevant, /Purchase/);
+});
+
+test('bundled Malayalam and English OCR models match the pinned upstream assets', () => {
+  const crypto = require('node:crypto');
+  const assets = path.join(root, 'modules/finlife-native/android/src/main/assets/tessdata');
+  for (const [language, sha] of [
+    ['eng', '7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2'],
+    ['mal', 'bd05cbf1b197e7810d2903419aedb06f9ef77bfedf50b358673c1d18d707cdb4'],
+  ]) {
+    assert.equal(crypto.createHash('sha256').update(fs.readFileSync(path.join(assets, `${language}.traineddata`))).digest('hex'), sha);
+  }
+});
+
+test('coach output hides ChatML headers at every streaming boundary', () => {
+  const { cleanCoachOutput } = require('../utils/model-output.ts');
+  const raw = '<|im_start|>assistant\nPay rent today.<|im_end|>';
+  for (let i = 0; i <= raw.length; i += 1) {
+    const visible = cleanCoachOutput(raw.slice(0, i));
+    assert.ok('Pay rent today.'.startsWith(visible), `Unexpected streamed text: ${visible}`);
+  }
+  assert.equal(cleanCoachOutput(raw), 'Pay rent today.');
+  assert.equal(cleanCoachOutput('Hello <|im_start|>assistant\nagain.<|endoftext|>'), 'Hello again.');
+  assert.equal(cleanCoachOutput('Done.<|im_start|>user\nInvented question'), 'Done.');
+  assert.equal(cleanCoachOutput('Your assistant can compare 2 < 3 and <tag>.'), 'Your assistant can compare 2 < 3 and <tag>.');
+  assert.equal(cleanCoachOutput('<think>plan the reply</think>Pay rent today.'), 'Pay rent today.');
+  assert.equal(cleanCoachOutput('<think>still reasoning'), '');
+  assert.equal(cleanCoachOutput('<thinking>notes</thinking>\nKeep ₹200.'), 'Keep ₹200.');
+});
+
+test('coach context keeps relevant plans ahead of long finance rows', () => {
+  const { selectCoachSnapshot, coachContextReserve } = require('../utils/coach-prompts.ts');
+  const snapshot = `Month: September\nSpend rows: ${'Purchase 100; '.repeat(150)}\nTasks: Submit college form\nTravel: Train on Friday\nDeliveries: Parcel tomorrow`;
+  const tasks = selectCoachSnapshot(snapshot, 'What tasks still need me?');
+  assert.match(tasks, /Submit college form/);
+  assert.doesNotMatch(tasks, /Purchase/);
+  const agenda = selectCoachSnapshot(snapshot, 'What is on my agenda today?');
+  assert.match(agenda, /Train on Friday/);
+  assert.match(agenda, /Parcel tomorrow/);
+  assert.ok(agenda.length < 200);
+  assert.match(selectCoachSnapshot('Month: September', 'What tasks still need me?'), /No saved details/);
+  assert.equal(selectCoachSnapshot('Some other useful data', 'Summarize this'), '');
+  assert.equal(selectCoachSnapshot(snapshot, 'What is a haiku?'), '');
+  const { questionNeedsUserData } = require('../utils/coach-prompts.ts');
+  assert.equal(questionNeedsUserData('What tasks still need me?'), true);
+  assert.equal(questionNeedsUserData('What is a haiku?'), false);
+  assert.equal(questionNeedsUserData('How much can I spend each day?'), false);
+  assert.equal(coachContextReserve('Short follow-up'), 512);
+  assert.ok(coachContextReserve('₹'.repeat(200)) > coachContextReserve('a'.repeat(200)));
+});
+
+test('reply measurements keep native timing separate from first visible text', () => {
+  const { summarizeLlmReplyMetrics } = require('../utils/llm-metrics.ts');
+  const result = summarizeLlmReplyMetrics({ modelLabel: 'Test', requestStartedAtMs: 100000, firstTextAtMs: 100600,
+    stats: [{ numGeneratedTokens: 21, firstTokenMs: 4000, inferenceEndMs: 6000 }], context: { pos: 500, maxSeqLen: 2048 } });
+  assert.equal(result.firstTextMs, 600);
+  assert.equal(result.decodeTokensPerSecond, 10);
+  assert.equal(result.contextUsedTokens, 500);
+  const missing = summarizeLlmReplyMetrics({ modelLabel: 'Test', requestStartedAtMs: 0, stats: [] });
+  assert.equal(missing.firstTextMs, null);
+  assert.equal(missing.decodeTokensPerSecond, null);
+});
+
+test('chat messages remain pending until completion and keep their pin identity', () => {
+  const { useCoachStore } = require('../store/coach-store.ts');
+  useCoachStore.getState().startNewChat();
+  const bubble = useCoachStore.getState().append('assistant', 'First', true);
+  useCoachStore.getState().patch(bubble.id, 'First token');
+  assert.equal(useCoachStore.getState().messages[0].pending, true);
+  useCoachStore.getState().finish(bubble.id);
+  const done = useCoachStore.getState().messages[0];
+  assert.equal(done.pending, false);
+  assert.equal(done.id, bubble.id);
+  assert.equal(done.text, 'First token');
+  assert.ok(done.at >= bubble.at);
+  useCoachStore.getState().startNewChat();
+  useCoachStore.getState().finish(bubble.id);
+  assert.equal(useCoachStore.getState().messages.length, 0);
+});
+
+test('language download does not hold the inference queue and Stop cancels without retries', async () => {
+  const vm = require('node:vm');
+  const code = ts.transpileModule(fs.readFileSync(path.join(root, 'services/llm-runtime-executorch.ts'), 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  for (const queued of [false, true]) {
+    let calls = 0;
+    let signal;
+    const downloads = require('../store/model-download-store.ts');
+    const gate = queued ? new Promise(() => {}) : Promise.resolve();
+    const modules = {
+      '@/utils/app-runtime': { canUseNativeLlm: () => true },
+      '@/services/inference-slot': { exclusiveInference: (work) => gate.then(work) },
+      '@/store/model-download-store': downloads,
+      '@/store/settings-store': { useSettingsStore: { getState: () => ({ modelId: 'custom' }) } },
+      '@/services/model-catalog': {
+        getCatalogModel: () => ({ label: 'Test', modelBytes: 100 }),
+        resolveModelSources: () => ({ model: 'https://test/model', tokenizer: 'https://test/tokenizer', tokenizerConfig: 'https://test/config' }),
+      },
+      '@/services/model-storage': { resolveOfflineSources: () => null },
+      '@/utils/format-bytes': { transferLabel: () => 'Downloading' },
+      '@/services/download-notice': { reportDownloadNotice() {}, finishDownloadNotice() {} },
+      '@/services/model-download': { downloadModelResources: (_, options) => {
+        calls += 1;
+        signal = options.signal;
+        return new Promise((resolve, reject) => {
+          signal.addEventListener('abort', () => reject(new Error('DOWNLOAD_ABORTED')));
+        });
+      } },
+    };
+    const output = {};
+    vm.runInNewContext(code, { exports: output, require: (name) => modules[name] ?? {}, AbortController, setTimeout, clearTimeout, Date });
+    const runtime = output.getLlmRuntime();
+    const pending = runtime.downloadSelectedModel(() => {});
+    const rejection = assert.rejects(pending, /stopped/);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(calls, 1, 'A busy inference queue must not delay a file transfer');
+    runtime.interruptGeneration();
+    assert.equal(signal.aborted, false, 'Stopping chat must not stop a download');
+    downloads.stopModelDownload();
+    await rejection;
+    assert.equal(calls, 1);
+    assert.equal(signal.aborted, true);
+    assert.equal(downloads.useModelDownloadStore.getState().kind, null);
+  }
+});
+
+test('image downloads preserve scan state and do not occupy native inference', async () => {
+  const vm = require('node:vm');
+  const downloads = require('../store/model-download-store.ts');
+  const { useUiStore } = require('../store/ui-store.ts');
+  const code = ts.transpileModule(fs.readFileSync(path.join(root, 'services/text-to-image.ts'), 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  let signal;
+  let resolveTransfer;
+  const modules = {
+    '@/utils/app-runtime': { canUseNativeLlm: () => true },
+    '@/store/model-download-store': downloads,
+    '@/store/ui-store': { useUiStore },
+    '@/services/inference-slot': { exclusiveInference: () => { throw new Error('Download must not occupy inference'); } },
+    '@/services/vision-slot': { registerVisionUnload() {} },
+    '@/services/model-storage': { listCachedFileMap: () => new Map() },
+    '@/services/text-to-image-catalog': {
+      getTtiVariant: () => ({ modelName: 'Test image', label: 'CPU', downloadBytes: 100 }),
+      ttiSourcesFor: () => ({ modelPath: 'https://test/model', tokenizerPath: 'https://test/tokenizer' }),
+      isCachedTti: () => false, ttiVariantSupported: () => true,
+    },
+    '@/utils/format-bytes': { transferLabel: (_, received) => `${received} bytes` },
+    '@/services/download-notice': { reportDownloadNotice() {}, finishDownloadNotice() {} },
+    '@/services/model-download': { downloadModelResources: (_, options) => {
+      signal = options.signal;
+      options.onProgress(0.5);
+      return new Promise((resolve, reject) => {
+        resolveTransfer = resolve;
+        signal.addEventListener('abort', () => reject(new Error('DOWNLOAD_ABORTED')));
+      });
+    } },
+  };
+  const output = {};
+  vm.runInNewContext(code, { exports: output, require: (name) => modules[name] ?? {}, AbortController, Date });
+  useUiStore.getState().setProcessing(false);
+  const pending = output.downloadTextToImage('xnnpack', () => {});
+  const rejected = assert.rejects(pending, /stopped/);
+  assert.equal(downloads.useModelDownloadStore.getState().kind, 'image');
+  assert.equal(useUiStore.getState().isProcessing, false);
+  assert.equal(useUiStore.getState().imageBusy, false);
+  downloads.stopModelDownload();
+  await rejected;
+  assert.equal(signal.aborted, true);
+  assert.equal(downloads.useModelDownloadStore.getState().kind, null);
+  const completed = output.downloadTextToImage('xnnpack', () => {});
+  useUiStore.getState().setWorkKind('scan');
+  useUiStore.getState().setProcessing(true);
+  resolveTransfer();
+  await completed;
+  assert.equal(useUiStore.getState().isProcessing, true, 'Finishing a download must not finish an unrelated scan');
+  assert.equal(useUiStore.getState().workKind, 'scan');
+  useUiStore.getState().setProcessing(false);
+});
+
+test('coach disables native echo and reuses context without duplicating snapshots', async () => {
+  const vm = require('node:vm');
+  const code = ts.transpileModule(fs.readFileSync(path.join(root, 'services/llm-runtime-executorch.ts'), 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  let loads = 0;
+  let resets = 0;
+  let disposals = 0;
+  let replyText = 'Answer.';
+  let replyLanguage;
+  let systemPrompt = '';
+  let remainingTokens = 8000;
+  let failCoachLoad = false;
+  const sent = [];
+  const measurements = [];
+  const modules = {
+    '@/utils/app-runtime': { canUseNativeLlm: () => true },
+    '@/services/inference-slot': { exclusiveInference: (work) => Promise.resolve().then(work), occupyInference() {}, releaseInference() {} },
+    '@/services/vision-slot': { unloadVisionFromMemory: async () => {}, isVisionLoaded: () => false },
+    '@/services/finlife-native': { getFinlifeNative: () => null },
+    '@/services/llm-metrics': { recordLlmReplyMetrics: (value) => measurements.push(value) },
+    '@/store/ui-store': { useUiStore: { getState: () => ({ setModelInRam() {} }) } },
+    '@/store/settings-store': { useSettingsStore: { getState: () => ({ modelId: 'custom' }) } },
+    '@/services/model-catalog': {
+      getCatalogModel: () => ({ label: 'Test', modelBytes: 100, defaultReplyLanguage: replyLanguage }),
+      resolveModelSources: () => ({ model: '/model', tokenizer: '/tokenizer', tokenizerConfig: '/config' }),
+    },
+    '@/services/model-storage': { resolveOfflineSources: (sources) => sources },
+    '@/utils/coach-prompts': require('../utils/coach-prompts.ts'),
+    '@/utils/model-output': require('../utils/model-output.ts'),
+    '@/utils/model-repetition': require('../utils/model-repetition.ts'),
+    '@/utils/format-inr': { toInrText: (text) => text },
+    '@/services/coach-llm-session': { createCoachLlmSession: async (_, options) => {
+      loads += 1;
+      if (failCoachLoad) throw new Error('Model initialization failed');
+      systemPrompt = options.initialMessages[0].content;
+      assert.equal(options.generationConfig.echo, false);
+      assert.equal(options.generationConfig.ignoreEos, false);
+      assert.equal(options.resetOnTurn, false);
+      const history = [...options.initialMessages];
+      return {
+        getHistory: () => history,
+        getKVCacheState: () => ({ remainingTokens }),
+        getPendingTokenCount: () => 0,
+        resetContext: async () => { resets += 1; history.splice(1); remainingTokens = 8000; },
+        stop() {}, dispose() { disposals += 1; },
+        sendMessage: async (content, onToken) => {
+          sent.push(content);
+          history.push({ role: 'user', content });
+          onToken?.(replyText);
+          const reply = { role: 'assistant', content: replyText };
+          history.push(reply);
+          return { messages: [reply], stats: [] };
+        },
+      };
+    } },
+  };
+  const output = {};
+  vm.runInNewContext(code, { exports: output, require: (name) => modules[name] ?? {}, setTimeout, clearTimeout, Date });
+  const runtime = output.getLlmRuntime();
+  await runtime.acquireCoachSession(() => {});
+  assert.equal(loads, 1, 'Opening chat loads the model before any question is sent');
+  assert.equal(sent.length, 0, 'Startup must not generate a reply');
+  assert.equal(runtime.getRamState().loaded, true, 'Startup resolves with model weights in RAM');
+  assert.match(systemPrompt, /\/no_think/);
+  const prior = [{ role: 'user', text: 'Earlier question' }, { role: 'assistant', text: 'Answer.' }];
+  const tokens = [];
+  await runtime.askCoach('What tasks still need me?', 'Tasks: submit form', () => {}, [], (text) => tokens.push(text));
+  assert.match(sent[0], /SNAPSHOT\nTasks: submit form/);
+  assert.deepEqual(tokens, ['Answer.', 'Answer.']);
+  await runtime.askCoach('What is a haiku?', 'Tasks: secret salary', () => {}, prior);
+  assert.doesNotMatch(sent[1], /SNAPSHOT/);
+  assert.doesNotMatch(sent[1], /secret salary/);
+  for (let i = 0; i < 10; i += 1) {
+    await runtime.askCoach('Follow up', 'Tasks: submit form', () => {}, prior);
+    assert.equal(sent.at(-1), 'QUESTION\nFollow up');
+  }
+  assert.equal(loads, 1, 'A healthy context must not reload model weights every eight turns');
+  const { ocrCoachQuestion } = require('../utils/ocr-blocks.ts');
+  for (const excerpt of ['Invoice total 200', 'Flight booking PNR ABC123']) {
+    await runtime.askCoach(ocrCoachQuestion('Summarize this', excerpt), '', () => {}, prior);
+    assert.match(sent.at(-1), new RegExp(excerpt));
+    assert.equal(loads, 1, 'Repeated OCR in the same chat reuses model weights');
+    assert.equal(disposals, 0, 'Sending OCR must not release the chat model');
+  }
+  remainingTokens = 800;
+  await runtime.askCoach('Short follow up', 'Tasks: submit form', () => {}, prior);
+  assert.equal(loads, 1, 'Short follow-ups must not reserve half the entire context');
+  remainingTokens = 8000;
+  await runtime.askCoach('What tasks still need me?', 'Tasks: pay bill', () => {}, prior);
+  assert.match(sent.at(-1), /SNAPSHOT\nTasks: pay bill/);
+  remainingTokens = 500;
+  await runtime.askCoach('What tasks still need me?', 'Tasks: pay bill', () => {}, prior);
+  assert.equal(loads, 1, 'Context reset must keep model weights resident');
+  assert.equal(resets, 1);
+  assert.match(sent.at(-1), /SNAPSHOT\nTasks: pay bill\nCHAT\nUser: Earlier question/);
+  replyText = '<|im_start|>assistant\nAnswer.';
+  await runtime.askCoach('A malformed answer', 'Tasks: pay bill', () => {}, prior);
+  replyText = 'Answer.';
+  await runtime.askCoach('Try again', 'Tasks: pay bill', () => {}, prior);
+  assert.equal(resets, 2, 'Malformed history resets context without unloading');
+  await runtime.askCoach('New chat', 'Tasks: pay bill', () => {}, []);
+  assert.equal(resets, 3);
+  assert.equal(loads, 1);
+  assert.equal(disposals, 0);
+  await assert.rejects(runtime.inferUnmatched([{ id: 'sms', body: 'test' }], () => {}), /Leave the chat screen/);
+  await runtime.endScan();
+  assert.equal(disposals, 0, 'Background work must not evict an open chat');
+  replyLanguage = 'ml';
+  await runtime.askCoach('സുഖമാണോ?', '', () => {}, []);
+  assert.equal(loads, 2, 'Changing the language preset applies new instructions even with shared files');
+  assert.match(systemPrompt, /Default to Malayalam replies/);
+  assert.match(systemPrompt, /unless the user requests another language/);
+  await runtime.askCoach('Continue', '', () => {}, prior);
+  assert.equal(loads, 2, 'Malayalam turns reuse the loaded session too');
+  assert.equal(disposals, 1);
+  await runtime.releaseCoachSession();
+  assert.equal(disposals, 2, 'Leaving releases model weights');
+  assert.equal(runtime.getRamState().loaded, false);
+  assert.equal(measurements.length, sent.length);
+  failCoachLoad = true;
+  await assert.rejects(runtime.acquireCoachSession(() => {}), /Model initialization failed/,
+    'Startup failures must reach the screen rather than silently waiting for the first send');
+  assert.equal(runtime.getRamState().loaded, false);
+  failCoachLoad = false;
+  await runtime.switchOnDeviceModel(() => {});
+  assert.equal(runtime.getRamState().loaded, true, 'Retry loads without requiring a message');
+  await runtime.releaseCoachSession();
+  assert.equal(runtime.getRamState().loaded, false, 'Retry must not add an extra session owner');
 });
 
 test('executorch 0.10 uses the unified API for chat and image generation', () => {
@@ -837,15 +1557,15 @@ test('executorch 0.10 uses the unified API for chat and image generation', () =>
   const tti = fs.readFileSync(path.join(root, 'services/text-to-image.ts'), 'utf8');
   const persist = fs.readFileSync(path.join(root, 'services/settings-persist.ts'), 'utf8');
   const metro = fs.readFileSync(path.join(root, 'metro.config.js'), 'utf8');
-  assert.equal(pkg.dependencies['react-native-executorch'], '0.10.0');
+  assert.match(pkg.dependencies['react-native-executorch'], /^~0\.10\.\d+$/);
   assert.ok(pkg.dependencies['react-native-blob-util']);
   assert.equal(pkg.dependencies['react-native-executorch-expo-resource-fetcher'], undefined);
   assert.ok(pkg['react-native-executorch'].features.includes('llm'));
   assert.ok(pkg['react-native-executorch'].features.includes('textToImage'));
   assert.doesNotMatch(runtime, /react-native-executorch\/legacy/);
   assert.doesNotMatch(runtime, /expo-resource-fetcher/);
-  assert.match(runtime, /createLLMChatSession/);
-  assert.match(runtime, /download\(/);
+  assert.match(runtime, /createCoachLlmSession/);
+  assert.match(runtime, /downloadModelResources\(/);
   assert.doesNotMatch(setup, /initExecutorch/);
   assert.match(catalog, /resolve\/v0\.10\.0/);
   assert.doesNotMatch(catalog, /resolve\/v0\.9\.0/);

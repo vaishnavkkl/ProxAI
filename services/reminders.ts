@@ -51,7 +51,7 @@ export async function setupReminderChannels() {
     enableLights: true,
     lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
     showBadge: true,
-    sound: 'default',
+    // Omit sound to use Android's default; a string is a bundled filename.
   });
   await Notifications.setNotificationChannelAsync(CHANNEL_UPDATES, {
     name: 'Scan updates',
@@ -60,7 +60,7 @@ export async function setupReminderChannels() {
     vibrationPattern: [0, 180],
     enableVibrate: true,
     showBadge: true,
-    sound: 'default',
+    // Omit sound to use Android's default notification tone.
   });
   await Notifications.setNotificationCategoryAsync(CATEGORY_PLAN, [
     { identifier: ACTION_DONE, buttonTitle: 'Mark done', options: { opensAppToForeground: false } },

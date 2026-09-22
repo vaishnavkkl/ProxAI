@@ -1,6 +1,8 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useState } from 'react';
-import { Pressable, SectionList, StyleSheet, View } from 'react-native';
+import { SectionList, StyleSheet, View } from 'react-native';
+import { AppPressable as Pressable } from '@/components/app-pressable';
+
 import { AppText } from '@/components/app-text';
 import { EventRow } from '@/components/event-row';
 import { ScreenScaffold } from '@/components/screen-scaffold';

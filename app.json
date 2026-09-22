@@ -7,7 +7,6 @@
     "icon": "./assets/images/icon.png",
     "scheme": "proxai",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
@@ -27,14 +26,11 @@
         "android.permission.READ_MEDIA_IMAGES"
       ],
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#0d1828",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "largeHeap": true,
       "package": "com.yshnav.ProxAI",
       "softwareKeyboardLayoutMode": "pan"
     },
@@ -50,9 +46,9 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#1E3A8A",
+          "backgroundColor": "#0d1828",
           "dark": {
-            "backgroundColor": "#0B1220"
+            "backgroundColor": "#0d1828"
           }
         }
       ],
@@ -78,7 +74,8 @@
           "cameraPermission": "ProxAI takes a photo to read text on this phone. Nothing is uploaded.",
           "microphonePermission": false
         }
-      ]
+      ],
+      "./plugins/with-large-heap.cjs"
     ],
     "experiments": {
       "typedRoutes": true,

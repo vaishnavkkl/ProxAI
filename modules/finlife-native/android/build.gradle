@@ -1,48 +1,28 @@
-apply plugin: 'com.android.library'
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
 
 group = 'expo.modules.finlifenative'
-version = ''
-
-def expoModulesCorePlugin = new File(project(":expo-modules-core").projectDir.absolutePath, "ExpoModulesCorePlugin.gradle")
-apply from: expoModulesCorePlugin
-applyKotlinExpoModulesCorePlugin()
-useCoreDependencies()
-useExpoPublishing()
-
-// If you want to use the managed Android SDK versions from expo-modules-core, set this to true.
-// The Android SDK versions will be bumped from time to time in SDK releases and may introduce breaking changes in your module code.
-// Most of the time, you may like to manage the Android SDK versions yourself.
-def useManagedAndroidSdkVersions = false
-if (useManagedAndroidSdkVersions) {
-  useDefaultAndroidSdkVersions()
-} else {
-  buildscript {
-    // Simple helper that allows the root project to override versions declared by this library.
-    ext.safeExtGet = { prop, fallback ->
-      rootProject.ext.has(prop) ? rootProject.ext.get(prop) : fallback
-    }
-  }
-  project.android {
-    compileSdkVersion safeExtGet("compileSdkVersion", 36)
-    defaultConfig {
-      minSdkVersion safeExtGet("minSdkVersion", 24)
-      targetSdkVersion safeExtGet("targetSdkVersion", 36)
-    }
-  }
-}
+version = '1.0.0'
 
 android {
   namespace "expo.modules.finlifenative"
   defaultConfig {
     versionCode 1
-    versionName ""
+    versionName "1.0.0"
   }
-  lintOptions {
+  lint {
     abortOnError false
   }
 }
 
 dependencies {
+  testImplementation 'junit:junit:4.13.2'
   // Bundled Latin OCR: works offline on the first scan, without a model download.
   implementation 'com.google.mlkit:text-recognition:16.0.1'
+  // Single-threaded to avoid competing with on-device chat for all CPU cores.
+  implementation 'cz.adaptech.tesseract4android:tesseract4android:4.9.0'
+  // Malayalam OCR must honor camera/gallery rotation before Tesseract reads the bitmap.
+  implementation 'androidx.exifinterface:exifinterface:1.3.7'
 }

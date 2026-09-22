@@ -66,5 +66,9 @@ public class FinlifeNativeModule: Module {
     AsyncFunction("filterInstalledPackages") { (_ packages: [String]) -> [String] in
       []
     }
+
+    AsyncFunction("saveGeneratedImage") { (_ uri: String) -> String in
+      throw Exception("Saving generated images to Photos is available on Android.")
+    }
   }
 }

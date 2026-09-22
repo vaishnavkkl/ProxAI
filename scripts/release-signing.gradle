@@ -1,0 +1,30 @@
+// Applied by the local release build script. Credentials never enter source control.
+def releaseCredentials = rootProject.file('../.local-signing/release.properties')
+def releaseProperties = new Properties()
+if (releaseCredentials.exists()) {
+    releaseCredentials.withInputStream { releaseProperties.load(it) }
+}
+def signingReady = ['storeFile', 'storePassword', 'keyAlias', 'keyPassword'].every {
+    releaseProperties.getProperty(it)?.trim()
+}
+android {
+    signingConfigs {
+        release {
+            if (signingReady) {
+                storeFile rootProject.file(releaseProperties.getProperty('storeFile'))
+                storeType 'PKCS12'
+                storePassword releaseProperties.getProperty('storePassword')
+                keyAlias releaseProperties.getProperty('keyAlias')
+                keyPassword releaseProperties.getProperty('keyPassword')
+            }
+        }
+    }
+    buildTypes {
+        release { signingConfig signingConfigs.release }
+    }
+}
+gradle.taskGraph.whenReady { graph ->
+    if (!signingReady && graph.allTasks.any { it.project == project && it.name.toLowerCase().contains('release') }) {
+        throw new GradleException('Local release signing is missing. Run npm run android:release to create it.')
+    }
+}

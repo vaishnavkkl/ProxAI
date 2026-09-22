@@ -1,3 +1,4 @@
+// @refresh reset
 import { StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/app-text';
@@ -35,6 +36,9 @@ export function MemoryUsageCard({
   deviceTotalMb,
   deviceSamples,
 }: MemoryUsageCardProps) {
+  'use no memo';
+  // This small status card updates once per second; avoid compiler caches across
+  // Fast Refresh changes to the chart's component export.
   const appPercent = Math.round(ratio(usedMb, totalMb) * 100);
   const devicePercent = Math.round(ratio(deviceUsedMb, deviceTotalMb) * 100);
 

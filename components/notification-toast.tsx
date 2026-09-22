@@ -1,12 +1,14 @@
 import { useEffect } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { AppPressable as Pressable } from '@/components/app-pressable';
+
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppText } from '@/components/app-text';
 import { useUiStore } from '@/store/ui-store';
 import { borderRadius, colors, spacing } from '@/styles';
 
-const TOAST_MS = 3200;
+const TOAST_MS = 2500;
 
 export function NotificationToast() {
   const insets = useSafeAreaInsets();
@@ -14,7 +16,7 @@ export function NotificationToast() {
   const clearToast = useUiStore((s) => s.clearToast);
 
   useEffect(() => {
-    if (!toast || toast.kind === 'info') {
+    if (!toast) {
       return;
     }
 

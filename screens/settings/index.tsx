@@ -3,12 +3,18 @@ import Constants from 'expo-constants';
 import { type Href, useRouter } from 'expo-router';
 import { openBrowserAsync, WebBrowserPresentationStyle } from 'expo-web-browser';
 import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Switch, View } from 'react-native';
+import { StyleSheet, Switch, View } from 'react-native';
+import { AppPressable as Pressable } from '@/components/app-pressable';
+
 
 import { AppDialog, type DialogAction } from '@/components/app-dialog';
 import { AppText } from '@/components/app-text';
 import { ImageModelPicker } from '@/components/image-model-picker';
 import { ModelPicker } from '@/components/model-picker';
+import { OcrLanguagePicker } from '@/components/ocr-language-picker';
+import { ModelDownloadCard } from '@/components/model-download-card';
+import { useModelDownloadStore } from '@/store/model-download-store';
+import { stopAllModelDownloads } from '@/services/model-download';
 import { ScheduleEditor } from '@/components/schedule-editor';
 import { ScreenScaffold } from '@/components/screen-scaffold';
 import { ScanLookback } from '@/components/scan-lookback';
@@ -23,21 +29,23 @@ import {
   getModelRamState,
   unloadModelFromMemory,
 } from '@/services/llm-service';
-import { MODEL_SOURCE_ORG, getCatalogModel, resolveModelSources } from '@/services/model-catalog';
+import { MODEL_SOURCE_ORG, getCatalogModel, resolveModelSources, type ModelId } from '@/services/model-catalog';
 import {
-  clearDownloadedModels,
+  cacheNameFromUrl,
   countPteFiles,
   getModelStorageInfo,
   hasCachedSources,
+  listRemovableLanguageModels,
+  removeCachedModelSources,
 } from '@/services/model-storage';
 import { resetLocalData } from '@/services/reset-local-data';
 import {
   downloadTextToImage,
   hasCachedTextToImage,
   isTextToImageAvailable,
-  disposeTextToImage,
+  removeCachedTextToImage,
 } from '@/services/text-to-image';
-import { TTI_MODEL_NAME, getTtiVariant } from '@/services/text-to-image-catalog';
+import { TTI_MODEL_NAME, TTI_VARIANTS, getTtiVariant, type TtiVariantId } from '@/services/text-to-image-catalog';
 import { requestReminderPermission, syncPlanReminders, clearPlanReminders } from '@/services/reminders';
 import { describeSmsAccess, requestSmsPermission } from '@/services/sms-inbox';
 import { useSettingsStore } from '@/store/settings-store';
@@ -72,7 +80,7 @@ export function Settings() {
   const setToast = useUiStore((s) => s.setToast);
   const modelInRam = useUiStore((s) => s.modelInRam);
   const imageInRam = useUiStore((s) => s.imageInRam);
-  const downloading = useUiStore((s) => s.workKind === 'download' && s.isProcessing);
+  const downloading = useModelDownloadStore((s) => s.kind != null);
   const processing = useUiStore((s) => s.isProcessing);
 
   const [modelStatus, setModelStatus] = useState('Checking on-device model…');
@@ -85,6 +93,7 @@ export function Settings() {
   const [showModels, setShowModels] = useState(false);
   const [showImages, setShowImages] = useState(false);
   const [showSchedule, setShowSchedule] = useState(false);
+  const [showRemoveModels, setShowRemoveModels] = useState(false);
   const [dialog, setDialog] = useState<{ title: string; message: string; actions: DialogAction[] } | null>(null);
 
   const catalog = getCatalogModel(modelId);
@@ -119,12 +128,11 @@ export function Settings() {
     void getModelAvailability().then((availability) => {
       if (active) {
         setModelStatus(availability.reason);
+        const storage = getModelStorageInfo();
+        setModelPath(storage.path);
+        setModelDisk(storageLine());
       }
     });
-
-    const storage = getModelStorageInfo();
-    setModelPath(storage.path);
-    setModelDisk(storageLine());
 
     void getDeviceSpecs().then((specs: DeviceSpecs) => {
       if (!active) {
@@ -153,7 +161,7 @@ export function Settings() {
   }, [modelId, customModelUrl, customTokenizerUrl, customTokenizerConfigUrl]);
 
   function confirmClearDatabase() {
-    if (useUiStore.getState().isProcessing) { setToast({ kind: 'info', message: 'Wait for the current scan before clearing data.' }); return; }
+    if (useUiStore.getState().isProcessing || useModelDownloadStore.getState().kind) { setToast({ kind: 'info', message: 'Wait for the scan or download before clearing data.' }); return; }
     setDialog({
       title: 'Clear local database?',
       message: 'For testing. Scanned messages can be read again on Refresh. Model files and Settings stay.',
@@ -181,38 +189,55 @@ export function Settings() {
     });
   }
 
-  function confirmClearDownloads() {
-    if (useUiStore.getState().isProcessing) { setToast({ kind: 'info', message: 'Wait for the current scan before clearing models.' }); return; }
-    setDialog({
-      title: 'Remove downloaded models?',
-      message: 'Deletes language-model and image-model files on this phone to free storage. RAM occupancy is unloaded first.',
-      actions: [
-        { label: 'Cancel', tone: 'secondary', onPress: () => undefined },
-        {
-          label: 'Remove',
-          tone: 'danger',
-          onPress: () => {
-            void (async () => {
-              try {
-                await disposeTextToImage();
-              } catch {
-                // Still delete files if unload failed.
-              }
-              try {
-                await unloadModelFromMemory();
-              } catch {
-                // Still delete files if unload failed.
-              }
-              const removed = clearDownloadedModels();
-              refreshStatus();
-              setToast({
-                kind: removed > 0 ? 'success' : 'info',
-                message: removed > 0 ? `Removed ${removed} files` : 'Download folder is already empty',
-              });
-            })();
-          },
-        },
-      ],
+  function openRemoveModels() {
+    if (useUiStore.getState().isProcessing || useModelDownloadStore.getState().kind) {
+      setToast({ kind: 'info', message: 'Wait for the scan or download before removing a model.' });
+      return;
+    }
+    setShowRemoveModels(true);
+  }
+
+  const removableLanguage = listRemovableLanguageModels({
+    customModelUrl,
+    customTokenizerUrl,
+    customTokenizerConfigUrl,
+  });
+  const removableImages = TTI_VARIANTS.filter((item) => hasCachedTextToImage(item.id));
+
+  async function removeLanguageDownload(id: ModelId) {
+    const sources = resolveModelSources({
+      modelId: id,
+      customModelUrl,
+      customTokenizerUrl,
+      customTokenizerConfigUrl,
+    });
+    const selected = resolveModelSources({
+      modelId,
+      customModelUrl,
+      customTokenizerUrl,
+      customTokenizerConfigUrl,
+    });
+    if (sources && selected && cacheNameFromUrl(sources.model) === cacheNameFromUrl(selected.model)) {
+      try {
+        await unloadModelFromMemory();
+      } catch {
+        // Still delete files if unload failed.
+      }
+    }
+    const removed = removeCachedModelSources(sources);
+    refreshStatus();
+    setToast({
+      kind: removed > 0 ? 'success' : 'info',
+      message: removed > 0 ? `Removed ${getCatalogModel(id).label}` : 'That language model is not on disk',
+    });
+  }
+
+  async function removeImageDownload(id: TtiVariantId) {
+    const removed = await removeCachedTextToImage(id);
+    refreshStatus();
+    setToast({
+      kind: removed > 0 ? 'success' : 'info',
+      message: removed > 0 ? `Removed ${TTI_MODEL_NAME} ${getTtiVariant(id).label}` : 'That image model is not on disk',
     });
   }
 
@@ -221,14 +246,7 @@ export function Settings() {
       setToast({ kind: 'info', message: 'Wait for the current scan to finish.' });
       return;
     }
-    setShowModels(false);
-    useUiStore.getState().setWorkKind('download');
-    useUiStore.getState().setProcessing(true);
-    useUiStore.getState().setProgress(0.02, 'Starting download…');
-    router.push('/processing' as Href);
-    void downloadSelectedModel((progress, label) => {
-      useUiStore.getState().setProgress(progress, label);
-    })
+    void downloadSelectedModel(() => undefined)
       .then(() => {
         refreshStatus();
         setToast({
@@ -236,15 +254,12 @@ export function Settings() {
           message: 'Model is on this phone. Refresh will not use the internet.',
         });
       })
-      .catch(() => {
+      .catch((error) => {
         setToast({
-          kind: 'error',
-          message: 'Download failed. Check internet and try again.',
+          kind: error instanceof Error && error.message === 'stopped' ? 'info' : 'error',
+          message: error instanceof Error && error.message === 'stopped'
+            ? 'Model download stopped.' : 'Download failed. Check internet and try again.',
         });
-      })
-      .finally(() => {
-        useUiStore.getState().setProcessing(false);
-        useUiStore.getState().setProgress(0, '');
       });
   }
 
@@ -257,14 +272,7 @@ export function Settings() {
       setToast({ kind: 'error', message: 'Needs the Android development build. Expo Go cannot download this model.' });
       return;
     }
-    setShowImages(false);
-    useUiStore.getState().setWorkKind('download');
-    useUiStore.getState().setProcessing(true);
-    useUiStore.getState().setProgress(0.02, 'Starting download…');
-    router.push('/processing' as Href);
-    void downloadTextToImage(ttiVariantId, (progress, label) => {
-      useUiStore.getState().setProgress(progress, label);
-    })
+    void downloadTextToImage(ttiVariantId, () => undefined)
       .then(() => {
         refreshStatus();
         setToast({
@@ -278,16 +286,13 @@ export function Settings() {
           kind: message === 'stopped' ? 'info' : 'error',
           message: message === 'stopped' ? 'Image model download stopped.' : message === 'unavailable' ? 'Needs the Android development build.' : 'Download failed. Check internet and try again.',
         });
-      })
-      .finally(() => {
-        useUiStore.getState().setProcessing(false);
-        useUiStore.getState().setProgress(0, '');
       });
   }
 
   return (
     <ScreenScaffold>
       <SectionHero title="Make it yours" subtitle="Your preferences, privacy and connected sources" icon="options-outline" />
+      {!showModels && !showImages ? <ModelDownloadCard /> : null}
 
       <View style={styles.list}>
         <SettingsRow icon="earth-outline" title="Event region" value="Kerala & India. Regional holidays are filtered; your personal bookings and appointments stay visible." />
@@ -360,6 +365,8 @@ export function Settings() {
           }
         />
 
+        <OcrLanguagePicker />
+
         <ScanLookback
           onChange={(months) => {
             const wider = months > scanLookbackMonths;
@@ -410,6 +417,7 @@ export function Settings() {
           }}
           title="Language models"
           visible={showModels}>
+          <ModelDownloadCard />
           <ModelPicker />
         </AppBottomSheet>
 
@@ -506,12 +514,78 @@ export function Settings() {
         />
 
         <SettingsRow
-          action="Remove"
-          icon="trash-bin-outline"
-          title="Remove downloaded models"
-          value="Deletes language-model and image-model files on this phone to free storage. Chat and Imagine can download them again."
-          onPress={confirmClearDownloads}
+          action="Stop"
+          icon="stop-circle-outline"
+          title="Stop all model downloads"
+          value="Stops active and leftover Android model transfers. Completed models stay on this phone."
+          onPress={() => {
+            void stopAllModelDownloads().then((count) => {
+              setToast({ kind: 'info', message: count ? `Stopped ${count} background model transfer(s).` : 'No background model transfers remain.' });
+            }).catch((error) => {
+              setToast({ kind: 'error', message: error instanceof Error ? error.message : 'Could not stop background downloads.' });
+            });
+          }}
         />
+
+        <SettingsRow
+          action="Choose"
+          icon="trash-bin-outline"
+          title="Choose a model to remove"
+          value="Pick one language or image model on this phone. Other downloads stay. Chat and Imagine can save it again later."
+          onPress={openRemoveModels}
+        />
+        <AppBottomSheet
+          accessibilityLabel="Close model removal"
+          onClose={() => {
+            setShowRemoveModels(false);
+          }}
+          title="Choose a model to remove"
+          visible={showRemoveModels}>
+          <AppText variant="bodySmall">
+            Only the model you tap is deleted. Shared files used by another download stay if that other model is still on disk.
+          </AppText>
+          {removableLanguage.length || removableImages.length ? null : (
+            <AppText variant="bodyRegular">No downloaded models are on this phone.</AppText>
+          )}
+          {removableLanguage.map((item) => (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Remove ${item.label}`}
+              key={`llm-${item.id}`}
+              onPress={() => {
+                void removeLanguageDownload(item.id);
+              }}
+              style={styles.removeRow}>
+              <View style={styles.copy}>
+                <AppText variant="labelRegular">{item.label}</AppText>
+                <AppText variant="caption">Language model</AppText>
+              </View>
+              <AppText style={styles.danger} variant="labelSmall">
+                Remove
+              </AppText>
+            </Pressable>
+          ))}
+          {removableImages.map((item) => (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Remove ${item.label}`}
+              key={`tti-${item.id}`}
+              onPress={() => {
+                void removeImageDownload(item.id);
+              }}
+              style={styles.removeRow}>
+              <View style={styles.copy}>
+                <AppText variant="labelRegular">
+                  {TTI_MODEL_NAME} · {item.label}
+                </AppText>
+                <AppText variant="caption">Image model</AppText>
+              </View>
+              <AppText style={styles.danger} variant="labelSmall">
+                Remove
+              </AppText>
+            </Pressable>
+          ))}
+        </AppBottomSheet>
         <SettingsRow
           action="Recheck"
           icon="download-outline" title="Downloaded size"
@@ -527,7 +601,7 @@ export function Settings() {
             });
           }}
           accessory={
-            <Pressable accessibilityRole="button" onPress={confirmClearDownloads} style={styles.ghost}>
+            <Pressable accessibilityRole="button" onPress={openRemoveModels} style={styles.ghost}>
               <AppText style={styles.danger} variant="labelSmall">
                 Remove
               </AppText>
@@ -667,6 +741,17 @@ const styles = StyleSheet.create({
   },
   danger: {
     color: colors.semantic.danger,
+  },
+  copy: {
+    flex: 1,
+    gap: 2,
+  },
+  removeRow: {
+    minHeight: 48,
+    paddingVertical: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
   },
   headerDownload: {
     minHeight: 48,

@@ -34,10 +34,11 @@ childProcess.execSync = function patchedExecSync(command, options) {
   if (cmd.startsWith('tar -xzmf ')) {
     const match = cmd.match(/^tar -xzmf "(.+)" -C "(.+)"$/);
     if (match) {
+      // Git/MSYS tar treats "C:\..." as a remote host (Cannot connect to C:).
       const tarball = toUnixPath(match[1]);
       const destDir = toUnixPath(match[2]);
-      fs.mkdirSync(destDir, { recursive: true });
-      return originalExecSync(`tar -xzmf "${tarball}" -C "${destDir}"`, options);
+      fs.mkdirSync(match[2], { recursive: true });
+      return childProcess.execFileSync('tar', ['-xzmf', tarball, '-C', destDir], options);
     }
   }
 

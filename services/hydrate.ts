@@ -10,6 +10,7 @@ import {
   loadItemStates,
   loadCoachPins,
 } from '@/services/database';
+import { hydrateImaginePrompt } from '@/services/imagine-prompt';
 import { loadScanSummary } from '@/services/scan-summary';
 import { loadAppSettings } from '@/services/settings-persist';
 import { useBudgetStore } from '@/store/budget-store';
@@ -38,6 +39,7 @@ export async function hydrateApp() {
       loadLifeItems(),
       loadItemStates(),
       loadCoachPins(),
+      hydrateImaginePrompt(),
     ]);
 
   const noiseIds = new Set(

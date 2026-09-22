@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { StyleSheet, TextInput, View } from 'react-native';
+import { AppPressable as Pressable } from '@/components/app-pressable';
+
 import { openBrowserAsync, WebBrowserPresentationStyle } from 'expo-web-browser';
 
 import { AppText } from '@/components/app-text';
 import {
-  CATALOG,
   CUSTOM_URL_HELP,
   MODEL_SOURCE_DOCS,
   MODEL_SOURCE_ORG,
@@ -13,14 +14,21 @@ import {
   resolveModelSources,
   type ModelId,
 } from '@/services/model-catalog';
-import { hasCachedSources } from '@/services/model-storage';
+import { unloadModelFromMemory } from '@/services/llm-service';
+import { chatModelsForOcr } from '@/services/ocr-chat-model';
+import { hasCachedSources, removeCachedModelSources } from '@/services/model-storage';
 import { useSettingsStore } from '@/store/settings-store';
 import { useUiStore } from '@/store/ui-store';
+import { useModelDownloadStore } from '@/store/model-download-store';
 import { borderRadius, colors, spacing } from '@/styles';
 
 export function ModelPicker() {
-  const processing = useUiStore((s) => s.isProcessing);
+  const scanning = useUiStore((s) => s.isProcessing);
+  const downloading = useModelDownloadStore((s) => s.kind === 'llm');
+  const processing = scanning || downloading;
   const modelId = useSettingsStore((s) => s.modelId);
+  const ocrLanguage = useSettingsStore((s) => s.ocrLanguage);
+  const models = chatModelsForOcr(ocrLanguage);
   const customModelUrl = useSettingsStore((s) => s.customModelUrl);
   const customTokenizerUrl = useSettingsStore((s) => s.customTokenizerUrl);
   const customTokenizerConfigUrl = useSettingsStore((s) => s.customTokenizerConfigUrl);
@@ -31,15 +39,45 @@ export function ModelPicker() {
   const [modelUrl, setModelUrl] = useState(customModelUrl);
   const [tokenizerUrl, setTokenizerUrl] = useState(customTokenizerUrl);
   const [configUrl, setConfigUrl] = useState(customTokenizerConfigUrl);
+  const [diskTick, setDiskTick] = useState(0);
 
   const selected = getCatalogModel(modelId);
 
   function selectModel(id: ModelId) {
     if (processing) return;
     setModelId(id);
+    if (getCatalogModel(id).defaultReplyLanguage === 'ml') {
+      useSettingsStore.getState().setOcrLanguage('ml');
+    }
     setToast({
       kind: 'success',
       message: id === 'custom' ? 'Paste three HTTPS URLs below' : `${getCatalogModel(id).label} selected`,
+    });
+  }
+
+  async function removeModel(id: ModelId) {
+    if (processing) {
+      return;
+    }
+    if (id === modelId) {
+      try {
+        await unloadModelFromMemory();
+      } catch {
+        // Still delete files if unload failed.
+      }
+    }
+    const removed = removeCachedModelSources(
+      resolveModelSources({
+        modelId: id,
+        customModelUrl: id === 'custom' ? modelUrl : customModelUrl,
+        customTokenizerUrl: id === 'custom' ? tokenizerUrl : customTokenizerUrl,
+        customTokenizerConfigUrl: id === 'custom' ? configUrl : customTokenizerConfigUrl,
+      }),
+    );
+    setDiskTick(diskTick + 1);
+    setToast({
+      kind: removed > 0 ? 'success' : 'info',
+      message: removed > 0 ? `Removed ${getCatalogModel(id).label}` : 'That language model is not on disk',
     });
   }
 
@@ -66,9 +104,12 @@ export function ModelPicker() {
         {selected.label} · {selected.sizeHint}. Inference stays on this phone. If the files are already
         in Documents/react-native-executorch they are used as-is. Select a model, then tap Download in
         the header.
+        {ocrLanguage === 'ml'
+          ? ' Malayalam OCR is on, so only Malayalam chat models are listed.'
+          : ''}
       </AppText>
 
-      {CATALOG.map((item) => {
+      {models.map((item) => {
         const cached = hasCachedSources(
           resolveModelSources({
             modelId: item.id,
@@ -80,33 +121,52 @@ export function ModelPicker() {
         const active = item.id === modelId;
 
         return (
-          <Pressable
-            key={item.id}
-            accessibilityRole="button"
-            disabled={processing}
-            accessibilityState={{ selected: active }}
-            onPress={() => {
-              selectModel(item.id);
-            }}
-            style={[styles.card, active ? styles.cardActive : undefined]}>
-            <View style={styles.cardTop}>
-              <AppText variant="labelRegular">{item.label}</AppText>
-              {item.recommended ? <AppText style={styles.badge}>Recommended</AppText> : null}
-              {item.compact ? <AppText style={styles.compact}>Fits older phones</AppText> : null}
-              {item.warn ? <AppText style={styles.warnBadge}>Large</AppText> : null}
-              {cached ? <AppText style={styles.cached}>On device</AppText> : null}
-            </View>
-            <AppText variant="bodySmall">
-              {item.sizeHint} · {item.ramHint}
-            </AppText>
-            {active ? <AppText variant="caption">{item.note}</AppText> : null}
-            {active && item.license ? <AppText variant="caption">{item.license} · no paid inference API</AppText> : null}
-            {active && item.warn ? (
-              <AppText style={styles.warn} variant="caption">
-                Large download. Loading checks available memory; performance is not yet benchmarked.
+          <View key={`${item.id}-${diskTick}`} style={[styles.card, active ? styles.cardActive : undefined]}>
+            <Pressable
+              accessibilityRole="button"
+              disabled={processing}
+              accessibilityState={{ selected: active }}
+              onPress={() => {
+                selectModel(item.id);
+              }}>
+              <View style={styles.cardTop}>
+                <AppText variant="labelRegular">{item.label}</AppText>
+                {item.recommended ? <AppText style={styles.badge}>Recommended</AppText> : null}
+                {item.compact ? <AppText style={styles.compact}>Fits older phones</AppText> : null}
+                {item.warn ? <AppText style={styles.warnBadge}>Large</AppText> : null}
+                {cached ? <AppText style={styles.cached}>On device</AppText> : null}
+              </View>
+              {item.malayalam ? (
+                <AppText style={styles.subtitle} variant="caption">
+                  Malayalam supported
+                </AppText>
+              ) : null}
+              <AppText variant="bodySmall">
+                {item.sizeHint} · {item.ramHint}
               </AppText>
+              {active ? <AppText variant="caption">{item.note}</AppText> : null}
+              {active && item.license ? <AppText variant="caption">{item.license} · no paid inference API</AppText> : null}
+              {active && item.warn ? (
+                <AppText style={styles.warn} variant="caption">
+                  Large download. Loading checks available memory; performance is not yet benchmarked.
+                </AppText>
+              ) : null}
+            </Pressable>
+            {cached ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Remove ${item.label} from this phone`}
+                disabled={processing}
+                onPress={() => {
+                  void removeModel(item.id);
+                }}
+                style={styles.remove}>
+                <AppText style={styles.danger} variant="labelSmall">
+                  Remove from this phone
+                </AppText>
+              </Pressable>
             ) : null}
-          </Pressable>
+          </View>
         );
       })}
 
@@ -211,6 +271,9 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textTransform: 'uppercase',
   },
+  subtitle: {
+    color: colors.neutral[600],
+  },
   compact: {
     color: colors.semantic.successDark,
     fontSize: 11,
@@ -251,6 +314,13 @@ const styles = StyleSheet.create({
   },
   primaryLabel: {
     color: colors.neutral[0],
+  },
+  remove: {
+    minHeight: 48,
+    justifyContent: 'center',
+  },
+  danger: {
+    color: colors.semantic.danger,
   },
   link: {
     color: colors.primary[500],

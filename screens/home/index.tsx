@@ -1,7 +1,10 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { type Href, useRouter } from 'expo-router';
-import { useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { type Href, useIsFocused, useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
+import { StyleSheet, View } from 'react-native';
+import { AppPressable as Pressable } from '@/components/app-pressable';
+import { LogoLoader as ActivityIndicator } from '@/components/logo-loader';
+
 
 import { AppDialog } from '@/components/app-dialog';
 import { AppText } from '@/components/app-text';
@@ -10,8 +13,10 @@ import { ScreenScaffold } from '@/components/screen-scaffold';
 import { StatCard } from '@/components/stat-card';
 import { LifeAgenda } from '@/components/life-agenda';
 import { ProgressMeter } from '@/components/progress-meter';
+import { TypedLine } from '@/components/typed-line';
 import { useLifeStore } from '@/store/life-store';
 import { useMessageRefresh } from '@/hooks/use-message-refresh';
+import { refreshHomeBrief } from '@/services/home-brief';
 import { getCatalogModel } from '@/services/model-catalog';
 import { resetLedgerData } from '@/services/reset-local-data';
 import { useBudgetStore } from '@/store/budget-store';
@@ -23,11 +28,15 @@ import { useTransactionStore } from '@/store/transaction-store';
 import { useUiStore } from '@/store/ui-store';
 import { borderRadius, colors, spacing } from '@/styles';
 import type { LedgerItem } from '@/types/ledger';
-import { formatInr } from '@/utils/format-inr';
-import { monthlyFixedTotal } from '@/utils/money-plan';
-import { relevantEvents } from '@/utils/relevant-events';
 import { listBankAccounts } from '@/utils/bank-account';
-import { monthCategoryTotal } from '@/utils/month-finance';
+import { formatInr } from '@/utils/format-inr';
+import { briefFactHash, dayBriefFacts, localHomeBrief } from '@/utils/home-brief';
+import { agendaGroups } from '@/utils/life-agenda';
+import { isInCurrentMonth, monthCategoryTotal } from '@/utils/month-finance';
+import { monthlyFixedTotal } from '@/utils/money-plan';
+import { regionalHolidays } from '@/utils/regional-holidays';
+import { relevantEvents } from '@/utils/relevant-events';
+import { confirmedRenewals } from '@/utils/renewals';
 
 const CATEGORIES = [
   { id: 'grocery', label: 'Grocery', icon: 'cart-outline' },
@@ -71,16 +80,56 @@ function netBalance(items: LedgerItem[]) {
 export function Home() {
   return (
     <ScreenScaffold scroll={false}>
-      <LifeAgenda header={<DashboardHeader />} footer={<FinanceOverview />} />
+      <DashboardHeader />
+      <LifeAgenda footer={<FinanceOverview />} />
     </ScreenScaffold>
   );
 }
 
 function DashboardHeader() {
   const { refresh, openResources, mailChoices, pickMail, skipMail } = useMessageRefresh();
+  const focused = useIsFocused();
+  const [visit, setVisit] = useState(0);
   const busy = useUiStore((s) => s.isProcessing);
   const progress = useUiStore((s) => s.llmProgress);
   const label = useUiStore((s) => s.llmLabel);
+  const storedBrief = useUiStore((s) => s.homeBrief);
+  const storedHash = useUiStore((s) => s.homeBriefHash);
+  const life = useLifeStore((s) => s.items);
+  const states = useLifeStore((s) => s.states);
+  const events = useEventStore((s) => s.items);
+  const subscriptions = useSubscriptionStore((s) => s.items);
+  const transactions = useTransactionStore((s) => s.financeItems);
+  const now = new Date();
+  const groups = agendaGroups(
+    [...life, ...relevantEvents([...events, ...regionalHolidays(now)], states, now), ...confirmedRenewals(subscriptions, states)],
+    states,
+    now,
+  );
+  let spend = 0;
+  for (const item of transactions) {
+    if (item.category === 'income' || item.amount == null || !isInCurrentMonth(item.date, now)) {
+      continue;
+    }
+    spend += item.amount;
+  }
+  const local = localHomeBrief(groups, { spend });
+  const hash = briefFactHash(dayBriefFacts(groups, { spend }) || local);
+  const brief = storedBrief && storedHash === hash ? storedBrief : local;
+
+  useEffect(() => {
+    if (focused) {
+      setVisit((n) => n + 1);
+    }
+  }, [focused]);
+
+  useEffect(() => {
+    if (busy) {
+      return;
+    }
+    void refreshHomeBrief({ allowLoad: false });
+  }, [busy, hash]);
+
   return (
     <View style={styles.header}>
       {mailChoices ? <MailAccountPicker accounts={mailChoices} onPick={pickMail} onSkip={skipMail} /> : null}
@@ -94,8 +143,11 @@ function DashboardHeader() {
           <AppText variant="labelSmall" style={styles.blue}>{busy ? 'Scanning' : 'Refresh'}</AppText>
         </Pressable>
       </View>
+      <View collapsable={false} style={styles.briefSlot}>
+        <TypedLine numberOfLines={3} replayToken={visit} style={styles.brief} text={brief} variant="bodyRegular" />
+      </View>
       <View style={styles.topRow}>
-        <AppText variant="bodySmall" style={styles.muted}>{new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}</AppText>
+        <AppText variant="bodySmall" style={styles.muted}>{now.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}</AppText>
         <Pressable accessibilityRole="button" accessibilityLabel="View scan and resource details" onPress={openResources} style={styles.resourceLink}>
           <Ionicons name="pulse-outline" size={16} color={colors.neutral[600]} />
           <AppText variant="caption" style={styles.muted}>Activity</AppText>
@@ -335,6 +387,11 @@ function FinanceOverview() {
 
 const styles = StyleSheet.create({
   header: { gap: spacing.xs },
+  briefSlot: {
+    minHeight: 42,
+    justifyContent: 'flex-start',
+  },
+  brief: { color: colors.neutral[700] },
   muted: { color: colors.neutral[600] },
   blue: { color: colors.primary[600] },
   scanButton: { minHeight: 48, paddingHorizontal: spacing.md, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.primary[50], borderRadius: borderRadius.full },

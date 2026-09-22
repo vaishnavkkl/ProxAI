@@ -1,14 +1,40 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Image } from 'expo-image';
-import { useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { useIsFocused } from 'expo-router';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Modal, StyleSheet, TextInput, View } from 'react-native';
+import { AppPressable as Pressable } from '@/components/app-pressable';
+
+import Animated, {
+  Extrapolation,
+  interpolate,
+  useAnimatedScrollHandler,
+  useAnimatedStyle,
+  useSharedValue,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppText } from '@/components/app-text';
+import { IMAGINE_SHEET, ImagineGenerating } from '@/components/imagine-generating';
+import { ModelRamCaption } from '@/components/model-ram-caption';
 import { ProgressMeter } from '@/components/progress-meter';
 import { ScreenBack } from '@/components/screen-back';
 import { ScreenScaffold } from '@/components/screen-scaffold';
 import { useKeyboardInset } from '@/hooks/use-keyboard-inset';
+import { saveImagineImage } from '@/services/imagine-save';
+import {
+  IMAGINE_DETAILS,
+  IMAGINE_LOOKS,
+  enhanceImaginePrompt,
+  hydrateImaginePrompt,
+  imagineSuggestions,
+  lastImaginePrompt,
+  parseImagineSeed,
+  randomImagineSeed,
+  rememberImaginePrompt,
+  type ImagineDetailId,
+  type ImagineLookId,
+} from '@/services/imagine-prompt';
 import {
   TTI_STOPPED,
   attachImagine,
@@ -23,50 +49,84 @@ import {
 import {
   DEFAULT_TTI_VARIANT,
   TTI_MODEL_NAME,
-  TTI_PROMPTS,
   getTtiVariant,
 } from '@/services/text-to-image-catalog';
+import { useModelDownloadStore } from '@/store/model-download-store';
 import { useSettingsStore } from '@/store/settings-store';
 import { useUiStore } from '@/store/ui-store';
 import { borderRadius, colors, gradients, layout, spacing } from '@/styles';
 import { formatBytes } from '@/utils/format-bytes';
 import { bottomSafeInset } from '@/utils/safe-area';
+import { paintFeedback } from '@/utils/paint-feedback';
+
+const PREVIEW_MAX = 216;
+const PREVIEW_DEFAULT = 168;
+const PREVIEW_KEYBOARD = 112;
+const COLLAPSE_RANGE = 128;
 
 export function Imagine() {
+  const focused = useIsFocused();
   const insets = useSafeAreaInsets();
   const keyboard = useKeyboardInset();
   const setToast = useUiStore((s) => s.setToast);
   const variant = useSettingsStore((s) => s.ttiVariantId) ?? DEFAULT_TTI_VARIANT;
   const isProcessing = useUiStore((s) => s.isProcessing);
-  const workKind = useUiStore((s) => s.workKind);
+  const downloadKind = useModelDownloadStore((s) => s.kind);
   const imageInRam = useUiStore((s) => s.imageInRam);
   const imageBusy = useUiStore((s) => s.imageBusy);
-  const llmProgress = useUiStore((s) => s.llmProgress);
-  const llmLabel = useUiStore((s) => s.llmLabel);
   const mounted = useRef(true);
-  const [prompt, setPrompt] = useState(TTI_PROMPTS[0]);
+  const lastProgressAt = useRef(0);
+  const optionBase = useRef<string | null>(null);
+  const scrollY = useSharedValue(0);
+  const keyboardOpen = useSharedValue(0);
+  const [prompt, setPrompt] = useState('');
+  const [lastPrompt, setLastPrompt] = useState('');
+  const [look, setLook] = useState<ImagineLookId | null>(null);
+  const [detail, setDetail] = useState<ImagineDetailId | null>(null);
   const [seedText, setSeedText] = useState('');
+  const [lastSeed, setLastSeed] = useState<number | null>(null);
   const [imageUri, setImageUri] = useState<string | null>(null);
-  const [cached, setCached] = useState(false);
-  const [ready, setReady] = useState(false);
+  const [fullScreen, setFullScreen] = useState(false);
+  const [savingPhoto, setSavingPhoto] = useState(false);
+  const ready = isTextToImageAvailable();
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(0);
   const [label, setLabel] = useState('');
+  // File cache changes when a download/generation finishes, without a new variant.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const cached = useMemo(() => hasCachedTextToImage(variant), [variant, downloadKind, busy]);
+  const suggestions = imagineSuggestions(lastPrompt);
 
   const selected = getTtiVariant(variant);
-  const working = busy || imageBusy;
-  const scanBusy = isProcessing && workKind !== 'download';
-  const blocked = working || scanBusy;
-  const available = isTextToImageAvailable();
+  const generating = imageBusy || (busy && downloadKind !== 'image');
+  const working = busy || imageBusy || downloadKind === 'image';
+  const scanBusy = isProcessing;
+  const blocked = working || scanBusy || (!cached && downloadKind != null);
   const loaded = imageInRam || isTextToImageLoaded();
-  const meterProgress = busy ? progress : llmProgress;
-  const meterLabel = busy ? label : llmLabel;
+  const compactPreview = keyboard > 0;
+
+  useEffect(() => {
+    keyboardOpen.value = keyboard > 0 ? 1 : 0;
+  }, [keyboard, keyboardOpen]);
+
+  const onScroll = useAnimatedScrollHandler({
+    onScroll: (event) => {
+      scrollY.value = event.contentOffset.y;
+    },
+  });
+
+  const previewStyle = useAnimatedStyle(() => {
+    if (keyboardOpen.value) {
+      return { height: PREVIEW_KEYBOARD };
+    }
+    return {
+      height: interpolate(scrollY.value, [0, COLLAPSE_RANGE], [PREVIEW_MAX, PREVIEW_DEFAULT], Extrapolation.CLAMP),
+    };
+  });
 
   useEffect(() => {
     mounted.current = true;
     attachImagine();
-    setReady(isTextToImageAvailable());
-    setBusy(imageBusy);
     return () => {
       mounted.current = false;
       detachImagine();
@@ -74,18 +134,46 @@ export function Imagine() {
   }, []);
 
   useEffect(() => {
-    setCached(hasCachedTextToImage(variant));
-  }, [variant]);
+    if (!focused) {
+      return;
+    }
+    let cancelled = false;
+    void hydrateImaginePrompt().then(() => {
+      if (cancelled || !mounted.current) {
+        return;
+      }
+      setLastPrompt(lastImaginePrompt());
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [focused]);
 
-  function seedValue() {
-    const parsed = Number.parseInt(seedText.trim(), 10);
-    return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+  function editPrompt(text: string) {
+    optionBase.current = null;
+    setLook(null);
+    setDetail(null);
+    setPrompt(text);
+  }
+
+  function selectOptions(nextLook: ImagineLookId | null, nextDetail: ImagineDetailId | null) {
+    // Rebuild only the text added by these controls; preserve the user's words.
+    const base = optionBase.current ?? prompt;
+    optionBase.current = base;
+    setLook(nextLook);
+    setDetail(nextDetail);
+    setPrompt(enhanceImaginePrompt(base, nextLook ?? '', nextDetail ?? ''));
   }
 
   function onProgress(value: number, next: string) {
     if (!mounted.current) {
       return;
     }
+    const now = Date.now();
+    if (value < 1 && now - lastProgressAt.current < 250) {
+      return;
+    }
+    lastProgressAt.current = now;
     setProgress(value);
     setLabel(next);
   }
@@ -99,7 +187,7 @@ export function Imagine() {
   }
 
   async function saveModel() {
-    if (blocked || !available) {
+    if (blocked || !ready) {
       return;
     }
     setBusy(true);
@@ -110,15 +198,13 @@ export function Imagine() {
       if (!mounted.current) {
         return;
       }
-      setCached(true);
       setToast({ kind: 'success', message: `${selected.modelName} ${selected.label} is on this phone.` });
     } catch (error) {
       if (!mounted.current) {
         return;
       }
       if (error instanceof Error && error.message === TTI_STOPPED) {
-        setCached(hasCachedTextToImage(variant));
-        setToast({ kind: 'info', message: 'Stopped. Partial files stay on this phone.' });
+        setToast({ kind: 'info', message: 'Download stopped. Tap Save model to try again.' });
         return;
       }
       setToast({ kind: 'error', message: failMessage(error) });
@@ -135,7 +221,7 @@ export function Imagine() {
     if (blocked) {
       return;
     }
-    if (!available) {
+    if (!ready) {
       setToast({ kind: 'error', message: 'Needs the Android development build. Expo Go cannot generate images.' });
       return;
     }
@@ -143,24 +229,35 @@ export function Imagine() {
       setToast({ kind: 'info', message: 'Wait for Refresh to finish, then generate.' });
       return;
     }
+    const sent = prompt.trim();
+    if (!sent) {
+      setToast({ kind: 'info', message: 'Write a short description first.' });
+      return;
+    }
+    const used = parseImagineSeed(seedText) ?? randomImagineSeed();
     setBusy(true);
     setProgress(0.02);
     setLabel(cached ? 'Loading the image model…' : `Saving ${formatBytes(selected.downloadBytes)} first…`);
     try {
-      const uri = await generateTextToImage(prompt, variant, seedValue(), onProgress);
+      await paintFeedback();
+      if (!mounted.current) {
+        return;
+      }
+      const uri = await generateTextToImage(sent, variant, used, onProgress);
       if (!mounted.current) {
         return;
       }
       setImageUri(uri);
-      setCached(true);
-      setToast({ kind: 'success', message: 'Image saved on this phone.' });
+      setLastSeed(used);
+      rememberImaginePrompt(prompt.trim());
+      setLastPrompt(prompt.trim());
+      setToast({ kind: 'success', message: 'Picture ready. You can save it to Photos.' });
     } catch (error) {
       if (!mounted.current) {
         return;
       }
       const message = error instanceof Error ? error.message : 'Could not generate the image.';
       if (message === TTI_STOPPED) {
-        setCached(hasCachedTextToImage(variant));
         setToast({ kind: 'info', message: 'Stopped. Downloaded files stay on this phone.' });
         return;
       }
@@ -177,6 +274,30 @@ export function Imagine() {
     }
   }
 
+  async function downloadImage() {
+    if (!imageUri || savingPhoto) {
+      return;
+    }
+    setSavingPhoto(true);
+    try {
+      await saveImagineImage(imageUri);
+      if (mounted.current) {
+        setToast({ kind: 'success', message: 'Saved to Photos.' });
+      }
+    } catch (error) {
+      if (mounted.current) {
+        setToast({
+          kind: 'error',
+          message: error instanceof Error ? error.message : 'Could not save the picture.',
+        });
+      }
+    } finally {
+      if (mounted.current) {
+        setSavingPhoto(false);
+      }
+    }
+  }
+
   return (
     <ScreenScaffold scroll={false}>
       <View style={[styles.page, { paddingBottom: keyboard > 0 ? keyboard : bottomSafeInset(insets.bottom) }]}>
@@ -184,96 +305,225 @@ export function Imagine() {
           <ScreenBack accessibilityLabel="Go back" />
           <View style={styles.barCopy}>
             <AppText variant="h3">Imagine</AppText>
-            <AppText variant="caption">{TTI_MODEL_NAME} · {selected.label} · {formatBytes(selected.downloadBytes)}</AppText>
-          </View>
-          <View style={styles.liveWrap}>
-            <View style={[styles.live, loaded ? styles.liveOn : styles.liveOff]} />
-            <AppText style={loaded ? styles.liveOnLabel : styles.liveOffLabel} variant="caption">
-              {loaded ? 'In RAM' : cached ? 'On disk' : 'Not saved'}
+            <AppText variant="caption">
+              {TTI_MODEL_NAME} · {selected.label}
             </AppText>
+            <ModelRamCaption loadBytes={selected.downloadBytes} loaded={loaded} paused={working} />
           </View>
         </View>
 
-        <View style={styles.canvas}>
-          {imageUri ? (
-            <Image
-              accessibilityLabel="Generated image"
-              contentFit="contain"
-              source={{ uri: imageUri }}
-              style={styles.preview}
-            />
+        <Animated.View style={[styles.previewCard, generating ? (compactPreview ? styles.previewSheetCompact : styles.previewSheet) : previewStyle]}>
+          {generating ? (
+            <ImagineGenerating compact={compactPreview} label={label} progress={progress} />
+          ) : imageUri ? (
+            <View style={styles.previewHit}>
+              <Pressable
+                accessibilityLabel="Open generated image full screen"
+                accessibilityRole="button"
+                onPress={() => {
+                  setFullScreen(true);
+                }}
+                style={styles.previewHit}>
+                <Image accessibilityLabel="Generated image" contentFit="contain" source={{ uri: imageUri }} style={styles.preview} />
+              </Pressable>
+              {lastSeed != null ? (
+                <View style={styles.seedBadge}>
+                  <AppText style={styles.seedBadgeLabel} variant="caption">
+                    Seed {lastSeed}
+                  </AppText>
+                </View>
+              ) : null}
+              <Pressable
+                accessibilityLabel="Download image to Photos"
+                accessibilityRole="button"
+                disabled={savingPhoto}
+                onPress={() => {
+                  void downloadImage();
+                }}
+                style={styles.downloadBtn}>
+                <Ionicons color={colors.neutral[0]} name="download-outline" size={18} />
+                <AppText style={styles.downloadLabel} variant="labelSmall">
+                  {savingPhoto ? 'Saving' : 'Save'}
+                </AppText>
+              </Pressable>
+            </View>
           ) : (
             <View style={styles.empty}>
               <View style={styles.emptyIcon}>
-                <Ionicons color={colors.primary[600]} name="image-outline" size={28} />
+                <Ionicons color={colors.primary[600]} name="image-outline" size={22} />
               </View>
-              <AppText variant="labelRegular">No image yet</AppText>
-              <AppText style={styles.emptyCopy} variant="bodySmall">
-                {cached
-                  ? 'Write a prompt, then generate on this phone.'
-                  : `Save the ${formatBytes(selected.downloadBytes)} model once, then generate offline.`}
+              <AppText variant="labelSmall">No image yet</AppText>
+              <AppText numberOfLines={compactPreview ? 1 : 2} style={styles.emptyCopy} variant="caption">
+                {cached ? 'Describe a picture, then generate on this phone.' : `Save ${formatBytes(selected.downloadBytes)} once, then generate offline.`}
               </AppText>
             </View>
           )}
-        </View>
+        </Animated.View>
 
-        <View style={styles.card}>
-          <TextInput
-            accessibilityLabel="Image prompt"
-            editable={!blocked}
-            multiline
-            onChangeText={setPrompt}
-            placeholder="Describe the image"
-            placeholderTextColor={colors.neutral[500]}
-            style={styles.prompt}
-            value={prompt}
-          />
-          <View style={styles.chips}>
-            {TTI_PROMPTS.map((item) => (
+        <Animated.ScrollView
+          contentContainerStyle={styles.scroll}
+          keyboardDismissMode="on-drag"
+          keyboardShouldPersistTaps="handled"
+          onScroll={onScroll}
+          scrollEventThrottle={16}
+          showsVerticalScrollIndicator={false}>
+          <View style={styles.card}>
+            <AppText variant="labelSmall">Your prompt</AppText>
+            <TextInput
+              accessibilityLabel="Custom image prompt"
+              editable={!blocked}
+              multiline
+              onChangeText={editPrompt}
+              placeholder="Describe the picture in your own words — a place, object, person, or scene."
+              placeholderTextColor={colors.neutral[500]}
+              style={styles.prompt}
+              value={prompt}
+            />
+            <AppText variant="labelSmall">{lastPrompt ? 'Next ideas from your last picture' : 'Try an idea'}</AppText>
+            <View style={styles.chipRow}>
+              {suggestions.map((item) => (
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={blocked}
+                  key={item.id}
+                  onPress={() => {
+                    editPrompt(item.prompt);
+                  }}
+                  style={[styles.chip, prompt === item.prompt ? styles.chipOn : undefined]}>
+                  <Ionicons
+                    color={prompt === item.prompt ? colors.primary[600] : colors.neutral[700]}
+                    name={item.icon}
+                    size={16}
+                  />
+                  <AppText numberOfLines={1} style={prompt === item.prompt ? styles.chipOnLabel : styles.chipLabel} variant="labelSmall">
+                    {item.label}
+                  </AppText>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+
+          <View style={styles.card}>
+            <AppText variant="labelSmall">Look · optional</AppText>
+            <AppText style={styles.hint} variant="caption">Options update your prompt. Only the text above is sent.</AppText>
+            <View style={styles.chipRow}>
+              {IMAGINE_LOOKS.map((item) => (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: look === item.id }}
+                  disabled={blocked}
+                  key={item.id}
+                  onPress={() => {
+                    selectOptions(look === item.id ? null : item.id, detail);
+                  }}
+                  style={[styles.chip, look === item.id ? styles.chipOn : undefined]}>
+                  <Ionicons color={look === item.id ? colors.primary[600] : colors.neutral[700]} name={item.icon} size={16} />
+                  <AppText style={look === item.id ? styles.chipOnLabel : styles.chipLabel} variant="labelSmall">
+                    {item.label}
+                  </AppText>
+                </Pressable>
+              ))}
+            </View>
+            <AppText variant="labelSmall">Detail · optional</AppText>
+            <View style={styles.chipRow}>
+              {IMAGINE_DETAILS.map((item) => (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: detail === item.id }}
+                  disabled={blocked}
+                  key={item.id}
+                  onPress={() => {
+                    selectOptions(look, detail === item.id ? null : item.id);
+                  }}
+                  style={[styles.chip, detail === item.id ? styles.chipOn : undefined]}>
+                  <Ionicons color={detail === item.id ? colors.primary[600] : colors.neutral[700]} name={item.icon} size={16} />
+                  <AppText style={detail === item.id ? styles.chipOnLabel : styles.chipLabel} variant="labelSmall">
+                    {item.label}
+                  </AppText>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+
+          <View style={styles.card}>
+            <View style={styles.seedTitle}>
+              <Ionicons color={colors.neutral[700]} name="key-outline" size={16} />
+              <AppText variant="labelSmall">Seed</AppText>
+            </View>
+            <AppText style={styles.hint} variant="caption">
+              A seed is a recipe number for the picture. Same words + same seed = the same picture again. Leave it empty for a new version. Tap Last used to keep a look.
+            </AppText>
+            <TextInput
+              accessibilityLabel="Optional seed"
+              editable={!blocked}
+              keyboardType="number-pad"
+              onChangeText={setSeedText}
+              placeholder="Leave empty for a new variation"
+              placeholderTextColor={colors.neutral[500]}
+              style={styles.seed}
+              value={seedText}
+            />
+            <View style={styles.chipRow}>
               <Pressable
                 accessibilityRole="button"
                 disabled={blocked}
-                key={item}
                 onPress={() => {
-                  setPrompt(item);
+                  setSeedText('');
                 }}
-                style={[styles.chip, prompt === item ? styles.chipOn : undefined]}>
-                <AppText numberOfLines={1} style={prompt === item ? styles.chipOnLabel : styles.chipLabel} variant="labelSmall">
-                  {item}
+                style={styles.chip}>
+                <Ionicons color={colors.neutral[700]} name="shuffle-outline" size={16} />
+                <AppText style={styles.chipLabel} variant="labelSmall">
+                  Random
                 </AppText>
               </Pressable>
-            ))}
+              <Pressable
+                accessibilityRole="button"
+                disabled={blocked}
+                onPress={() => {
+                  setSeedText('42');
+                }}
+                style={[styles.chip, seedText === '42' ? styles.chipOn : undefined]}>
+                <Ionicons color={seedText === '42' ? colors.primary[600] : colors.neutral[700]} name="key-outline" size={16} />
+                <AppText style={seedText === '42' ? styles.chipOnLabel : styles.chipLabel} variant="labelSmall">
+                  Example 42
+                </AppText>
+              </Pressable>
+              {lastSeed != null ? (
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={blocked}
+                  onPress={() => {
+                    setSeedText(String(lastSeed));
+                  }}
+                  style={[styles.chip, seedText === String(lastSeed) ? styles.chipOn : undefined]}>
+                  <Ionicons color={seedText === String(lastSeed) ? colors.primary[600] : colors.neutral[700]} name="refresh-outline" size={16} />
+                  <AppText style={seedText === String(lastSeed) ? styles.chipOnLabel : styles.chipLabel} variant="labelSmall">
+                    Last used {lastSeed}
+                  </AppText>
+                </Pressable>
+              ) : null}
+            </View>
           </View>
-          <TextInput
-            accessibilityLabel="Optional seed"
-            editable={!blocked}
-            keyboardType="number-pad"
-            onChangeText={setSeedText}
-            placeholder="Seed (optional)"
-            placeholderTextColor={colors.neutral[500]}
-            style={styles.seed}
-            value={seedText}
-          />
-        </View>
 
-        {!ready ? (
-          <AppText variant="bodySmall">
-            Image generation needs the Android development build. Expo Go cannot run SDXS 512 DreamShaper.
-          </AppText>
-        ) : null}
+          {!ready ? (
+            <AppText variant="bodySmall">
+              Image generation needs the Android development build. Expo Go cannot run SDXS 512 DreamShaper.
+            </AppText>
+          ) : null}
 
-        {working ? <ProgressMeter label={meterLabel || 'Working on this phone…'} progress={meterProgress} /> : null}
+          {working && !generating ? <ImagineDownloadMeter /> : null}
+        </Animated.ScrollView>
 
         <View style={styles.actions}>
           {!cached && !working ? (
             <Pressable
               accessibilityRole="button"
-              disabled={blocked || !available}
+              disabled={blocked || !ready}
               onPress={() => {
                 void saveModel();
               }}
-              style={[styles.secondary, blocked || !available ? styles.disabled : undefined]}>
-              <Ionicons color={colors.primary[600]} name="download-outline" size={18} />
+              style={[styles.secondary, blocked || !ready ? styles.disabled : undefined]}>
+              <Ionicons color={colors.primary[600]} name="cloud-download-outline" size={18} />
               <AppText variant="labelLarge">Save {formatBytes(selected.downloadBytes)}</AppText>
             </Pressable>
           ) : null}
@@ -307,14 +557,43 @@ export function Imagine() {
           )}
         </View>
       </View>
+
+      <Modal animationType="fade" onRequestClose={() => setFullScreen(false)} transparent visible={fullScreen && imageUri != null}>
+        <View style={styles.fullScreen}>
+          <Pressable accessibilityRole="button" onPress={() => setFullScreen(false)} style={styles.fullHit}>
+            {imageUri ? <Image contentFit="contain" source={{ uri: imageUri }} style={styles.fullImage} /> : null}
+          </Pressable>
+          {imageUri ? (
+            <Pressable
+              accessibilityLabel="Download image to Photos"
+              accessibilityRole="button"
+              disabled={savingPhoto}
+              onPress={() => {
+                void downloadImage();
+              }}
+              style={styles.fullDownload}>
+              <Ionicons color={colors.neutral[0]} name="download-outline" size={18} />
+              <AppText style={styles.downloadLabel} variant="labelLarge">
+                {savingPhoto ? 'Saving' : 'Save to Photos'}
+              </AppText>
+            </Pressable>
+          ) : null}
+        </View>
+      </Modal>
     </ScreenScaffold>
   );
+}
+
+function ImagineDownloadMeter() {
+  const progress = useModelDownloadStore((s) => s.progress);
+  const label = useModelDownloadStore((s) => s.label);
+  return <ProgressMeter label={label || 'Working on this phone…'} progress={progress} />;
 }
 
 const styles = StyleSheet.create({
   page: {
     flex: 1,
-    gap: spacing.md,
+    gap: spacing.sm,
   },
   bar: {
     flexDirection: 'row',
@@ -325,57 +604,70 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 2,
   },
-  liveWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    minHeight: layout.touchTarget,
-    paddingHorizontal: spacing.md,
-    borderRadius: borderRadius.full,
-    backgroundColor: colors.neutral[0],
-    borderWidth: 1,
-    borderColor: colors.neutral[200],
-  },
-  live: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  liveOn: {
-    backgroundColor: colors.semantic.success,
-  },
-  liveOff: {
-    backgroundColor: colors.semantic.danger,
-  },
-  liveOnLabel: {
-    color: colors.semantic.successDark,
-  },
-  liveOffLabel: {
-    color: colors.neutral[600],
-  },
-  canvas: {
-    flex: 1,
-    minHeight: 180,
+  previewCard: {
     borderRadius: borderRadius.lg,
     backgroundColor: colors.neutral[0],
     borderWidth: 1,
     borderColor: colors.neutral[200],
     overflow: 'hidden',
   },
+  previewSheet: {
+    width: '100%',
+    maxWidth: IMAGINE_SHEET,
+    maxHeight: IMAGINE_SHEET,
+    aspectRatio: 1,
+    alignSelf: 'center',
+  },
+  previewSheetCompact: {
+    width: 168,
+    maxWidth: 168,
+    aspectRatio: 1,
+    alignSelf: 'center',
+  },
+  previewHit: {
+    flex: 1,
+  },
   preview: {
     width: '100%',
     height: '100%',
+  },
+  seedBadge: {
+    position: 'absolute',
+    left: spacing.sm,
+    bottom: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.sm,
+    backgroundColor: 'rgba(31, 41, 55, 0.72)',
+  },
+  seedBadgeLabel: {
+    color: colors.neutral[0],
+  },
+  downloadBtn: {
+    position: 'absolute',
+    right: spacing.sm,
+    bottom: spacing.sm,
+    minHeight: 36,
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.full,
+    backgroundColor: colors.primary[600],
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  downloadLabel: {
+    color: colors.neutral[0],
   },
   empty: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: spacing['2xl'],
-    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    gap: spacing.xs,
   },
   emptyIcon: {
-    width: 48,
-    height: 48,
+    width: 36,
+    height: 36,
     borderRadius: borderRadius.md,
     backgroundColor: colors.primary[100],
     alignItems: 'center',
@@ -384,6 +676,10 @@ const styles = StyleSheet.create({
   emptyCopy: {
     textAlign: 'center',
     color: colors.neutral[600],
+  },
+  scroll: {
+    gap: spacing.sm,
+    paddingBottom: spacing.sm,
   },
   card: {
     gap: spacing.sm,
@@ -404,20 +700,29 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlignVertical: 'top',
   },
-  chips: {
+  hint: {
+    color: colors.neutral[600],
+  },
+  seedTitle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  chipRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.sm,
   },
   chip: {
-    maxWidth: '100%',
     minHeight: 40,
     paddingHorizontal: spacing.md,
     borderRadius: borderRadius.full,
     borderWidth: 1,
     borderColor: colors.neutral[400],
     backgroundColor: colors.neutral[50],
-    justifyContent: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
   },
   chipOn: {
     backgroundColor: colors.primary[50],
@@ -485,5 +790,29 @@ const styles = StyleSheet.create({
   disabled: {
     backgroundColor: colors.neutral[100],
     experimental_backgroundImage: undefined,
+  },
+  fullScreen: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.92)',
+    justifyContent: 'center',
+  },
+  fullHit: {
+    flex: 1,
+  },
+  fullImage: {
+    width: '100%',
+    height: '100%',
+  },
+  fullDownload: {
+    position: 'absolute',
+    alignSelf: 'center',
+    bottom: spacing['3xl'],
+    minHeight: layout.touchTarget,
+    paddingHorizontal: spacing.xl,
+    borderRadius: borderRadius.full,
+    backgroundColor: colors.primary[600],
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
 });

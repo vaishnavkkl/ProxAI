@@ -1,5 +1,5 @@
 import { Finance } from '@/screens/finance';
 
-export default function FinanceRoute() {
+export default function FinanceTab() {
   return <Finance />;
 }

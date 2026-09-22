@@ -54,6 +54,8 @@ export function isWorthLlm(message: IncomingMessage): boolean {
     return false;
   }
   return (
+    // Latin keyword rules cannot classify Malayalam notices; let the selected LLM decide.
+    /[\u0D00-\u0D7F]/.test(message.body) ||
     MONEY.test(message.body) ||
     DATE_OR_DUE.test(message.body) ||
     TICKET_OR_EVENT.test(message.body) ||

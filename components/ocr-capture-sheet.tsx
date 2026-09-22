@@ -1,5 +1,5 @@
 import { Image } from 'expo-image';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { StyleSheet } from 'react-native';
 
 import { AppBottomSheet } from '@/components/app-bottom-sheet';
@@ -18,11 +18,13 @@ type OcrCaptureSheetProps = {
 export function OcrCaptureSheet({ visible, uri, text, onClose, onAsk }: OcrCaptureSheetProps) {
   const [asking, setAsking] = useState(false);
 
-  useEffect(() => {
+  const [wasVisible, setWasVisible] = useState(visible);
+  if (wasVisible !== visible) {
+    setWasVisible(visible);
     if (!visible) {
       setAsking(false);
     }
-  }, [visible]);
+  }
 
   return (
     <AppBottomSheet
@@ -36,9 +38,9 @@ export function OcrCaptureSheet({ visible, uri, text, onClose, onAsk }: OcrCaptu
       }}
       title={asking ? 'Ask assistant' : 'Text from this image'}
       visible={visible}>
-      {!asking && uri ? <Image contentFit="contain" source={{ uri }} style={styles.preview} /> : null}
+      {visible && !asking && uri ? <Image cachePolicy="none" contentFit="contain" source={{ uri }} style={styles.preview} /> : null}
       {!asking ? <AppText variant="h4">Text from this photo</AppText> : null}
-      <OcrTextBlocks asking={asking} onAsk={onAsk} onAskingChange={setAsking} text={text} />
+      <OcrTextBlocks key={text} asking={asking} onAsk={onAsk} onAskingChange={setAsking} text={text} />
     </AppBottomSheet>
   );
 }

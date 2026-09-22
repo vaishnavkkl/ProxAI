@@ -1,6 +1,7 @@
 import type { LedgerItem } from '@/types/ledger';
 import type { ParsedItem } from '@/types/llm-output';
 import { isInCurrentMonth } from '@/utils/month-finance';
+import { isCreditCardAccount, isCreditCardAccountText } from '@/utils/card-sms';
 
 export type BankAccount = {
   id: string;
@@ -15,110 +16,112 @@ export type BankAccountTotal = BankAccount & {
   count: number;
 };
 
+// Recognized Indian banks, including banks with banking operations in India.
+// Names checked against RBI's banks-in-India directory and DFS's banking list:
+// https://www.rbi.org.in/commonman/English/scripts/banksinindia.aspx
+// https://www.financialservices.gov.in/banking
 const BANKS: { id: string; name: string; codes: string[]; words: RegExp }[] = [
-  { id: 'hdfc', name: 'HDFC Bank', codes: ['hdfcbk', 'hdfcbn', 'hdfcb'], words: /\bhdfc\b|@okhdfc/i },
-  { id: 'icici', name: 'ICICI Bank', codes: ['icicib', 'icicibk'], words: /\bicici\b|@okicici/i },
+  { id: 'hdfc', name: 'HDFC Bank', codes: ['hdfcbk', 'hdfcbn', 'hdfcb'], words: /\bhdfc(?:\s+bank)?\b/i },
+  { id: 'icici', name: 'ICICI Bank', codes: ['icicib', 'icicibk'], words: /\bicici(?:\s+bank)?\b/i },
   {
     id: 'sbi',
     name: 'State Bank of India',
-    codes: ['sbiinb', 'sbiupi', 'sbipsg', 'sbicrd', 'sbinin', 'sbicbk'],
-    words: /\bsbi\b|state bank|@oksbi/i,
+    codes: ['sbiinb', 'sbiupi', 'sbipsg', 'sbinin', 'sbicbk'],
+    words: /\bstate bank of india\b|\bsbi\b/i,
   },
-  { id: 'axis', name: 'Axis Bank', codes: ['axisbk', 'axisbn', 'utibnk'], words: /\baxis\b|@okaxis/i },
-  { id: 'kotak', name: 'Kotak Bank', codes: ['kotakb', 'kotakm'], words: /\bkotak\b|@okkotak/i },
+  { id: 'axis', name: 'Axis Bank', codes: ['axisbk', 'axisbn', 'utibnk'], words: /\baxis\s+bank\b|\baxis(?=\s+(?:a\/c|account|acct))\b/i },
+  { id: 'kotak', name: 'Kotak Mahindra Bank', codes: ['kotakb', 'kotakm'], words: /\bkotak(?:\s+mahindra)?(?:\s+bank)?\b/i },
   { id: 'yes', name: 'Yes Bank', codes: ['yesbnk', 'yesbak'], words: /\byes\s*bank\b/i },
-  { id: 'idfc', name: 'IDFC First', codes: ['idfcfb', 'idfcbk'], words: /\bidfc\b/i },
+  { id: 'idfc', name: 'IDFC FIRST Bank', codes: ['idfcfb', 'idfcbk'], words: /\bidfc(?:\s+first)?(?:\s+bank)?\b/i },
   { id: 'canara', name: 'Canara Bank', codes: ['canbnk', 'canara'], words: /\bcanara\b/i },
   { id: 'pnb', name: 'Punjab National Bank', codes: ['pnbsms', 'punjab'], words: /\bpnb\b|punjab national/i },
-  { id: 'bob', name: 'Bank of Baroda', codes: ['bobtxn', 'baroda', 'bobbnk'], words: /\bbaroda\b|\bbob\b/i },
-  { id: 'union', name: 'Union Bank', codes: ['unionb'], words: /\bunion\s*bank\b/i },
-  { id: 'federal', name: 'Federal Bank', codes: ['fedbnk', 'federal'], words: /\bfederal\b/i },
+  { id: 'bob', name: 'Bank of Baroda', codes: ['bobtxn', 'baroda', 'bobbnk'], words: /\bbank of baroda\b|\bbob(?=\s+(?:bank|a\/c|account|acct))\b/i },
+  { id: 'union', name: 'Union Bank of India', codes: ['unionb'], words: /\bunion\s+bank(?:\s+of\s+india)?\b/i },
+  { id: 'federal', name: 'Federal Bank', codes: ['fedbnk', 'federal'], words: /\bfederal\s+bank\b|\bfederal(?=\s+(?:a\/c|account|acct))\b/i },
   { id: 'indusind', name: 'IndusInd Bank', codes: ['indbnk', 'indusind'], words: /\bindusind\b/i },
   { id: 'iob', name: 'Indian Overseas Bank', codes: ['iobchn', 'iobbnk'], words: /\biob\b|indian overseas/i },
   { id: 'indian', name: 'Indian Bank', codes: ['indianb'], words: /\bindian\s*bank\b/i },
   { id: 'idbi', name: 'IDBI Bank', codes: ['idbibk', 'idbi'], words: /\bidbi\b/i },
   { id: 'bandhan', name: 'Bandhan Bank', codes: ['bandhn', 'bandhan'], words: /\bbandhan\b/i },
   { id: 'rbl', name: 'RBL Bank', codes: ['rblbnk', 'rbl'], words: /\brbl\s*bank\b|\brbl\b/i },
-  { id: 'au', name: 'AU Bank', codes: ['aubank', 'ausfbn'], words: /\bau\s*bank\b|\bau\s*small\b/i },
-  { id: 'hsbc', name: 'HSBC', codes: ['hsbcin'], words: /\bhsbc\b/i },
-  { id: 'citi', name: 'Citi', codes: ['citibk', 'citibn'], words: /\bciti\b/i },
+  { id: 'au', name: 'AU Small Finance Bank', codes: ['aubank', 'ausfbn'], words: /\bau\s+(?:small finance\s+)?bank\b/i },
+  { id: 'hsbc', name: 'HSBC Bank', codes: ['hsbcin'], words: /\bhsbc\b/i },
+  { id: 'citi', name: 'Citibank', codes: ['citibk', 'citibn'], words: /\bciti(?:bank)?\b/i },
   { id: 'scb', name: 'Standard Chartered', codes: ['scbank', 'scblin'], words: /\bstandard\s*chartered\b|\bscb\b/i },
   { id: 'dbs', name: 'DBS Bank', codes: ['dbsinb', 'dbsbnk'], words: /\bdbs\b/i },
-];
-
-const WALLETS: { id: string; name: string; codes: string[]; words: RegExp }[] = [
-  { id: 'paytm', name: 'Paytm', codes: ['paytmb', 'paytm'], words: /\bpaytm\b/i },
-  { id: 'phonepe', name: 'PhonePe', codes: ['phonpe', 'phonepe'], words: /\bphonepe\b/i },
-  { id: 'gpay', name: 'Google Pay', codes: ['gpay', 'googpl', 'gpayin'], words: /\bgpay\b|google pay/i },
-  { id: 'airtel', name: 'Airtel Payments', codes: ['airpmt', 'airtel'], words: /\bairtel\s*payments\b/i },
+  { id: 'boi', name: 'Bank of India', codes: ['boiind', 'boisms'], words: /\bbank of india\b/i },
+  { id: 'bom', name: 'Bank of Maharashtra', codes: ['mahbnk', 'bomsms'], words: /\bbank of maharashtra\b/i },
+  { id: 'central', name: 'Central Bank of India', codes: ['centbk', 'cbinbk'], words: /\bcentral bank of india\b/i },
+  { id: 'psb', name: 'Punjab & Sind Bank', codes: ['psbank', 'psbsms'], words: /\bpunjab\s*(?:&|and)\s*sind(?:h)?\s+bank\b/i },
+  { id: 'uco', name: 'UCO Bank', codes: ['ucobnk', 'ucobank'], words: /\buco\s+bank\b/i },
+  { id: 'southindian', name: 'South Indian Bank', codes: ['sibank', 'sibbnk'], words: /\bsouth indian bank\b|\bsib(?=\s+(?:bank|a\/c|account))\b/i },
+  { id: 'csb', name: 'CSB Bank', codes: ['csbbnk', 'csbank'], words: /\b(?:csb bank|catholic syrian bank)\b/i },
+  { id: 'dhanlaxmi', name: 'Dhanlaxmi Bank', codes: ['dhanbk', 'dhanbn'], words: /\bdhan(?:laxmi|alakshmi)\s+bank\b/i },
+  { id: 'cityunion', name: 'City Union Bank', codes: ['cubank', 'cubbnk'], words: /\bcity union bank\b/i },
+  { id: 'dcb', name: 'DCB Bank', codes: ['dcbbnk', 'dcbbank'], words: /\bdcb\s+bank\b/i },
+  { id: 'jkb', name: 'Jammu & Kashmir Bank', codes: ['jkbank', 'jkbmsg'], words: /\bjammu\s*(?:&|and)\s*kashmir bank\b|\bj\s*&\s*k\s*bank\b/i },
+  { id: 'karnataka', name: 'Karnataka Bank', codes: ['ktkbnk', 'kblbnk'], words: /\bkarnataka bank\b/i },
+  { id: 'kvb', name: 'Karur Vysya Bank', codes: ['kvbnot', 'kvbank'], words: /\bkarur vysya bank\b|\bkvb\b/i },
+  { id: 'nainital', name: 'Nainital Bank', codes: ['ntbank'], words: /\bnainital bank\b/i },
+  { id: 'tmb', name: 'Tamilnad Mercantile Bank', codes: ['tmbank', 'tmbltd'], words: /\btamilnad(?:u)? mercantile bank\b|\btmb\b/i },
+  { id: 'keralagramin', name: 'Kerala Gramin Bank', codes: ['kgbank', 'kgbbnk'], words: /\bkerala gramin bank\b/i },
 ];
 
 const LAST4 =
-  /(?:a\/c|acct|account|\bac\b)\s*(?:no\.?|number)?\s*(?:\*+|x+|xx+|xxxx)?\s*(\d{3,6})/i;
-const LAST4_XX = /\b(?:xx+|x{2,}|\*{2,}|ending(?:\s+in)?)\s*(\d{3,4})\b/i;
-const FROM_BANK =
-  /(?:debited\s+from|credited\s+to|from|in)\s+([A-Za-z][A-Za-z .]{1,24}?)\s+(?:bank|a\/c|acct|xx|\*)/i;
+  /\b(?:a\s*\/\s*c|acct?|account)\s*(?:no\.?|number|ending(?:\s+(?:in|with))?)?\s*[:.#-]?\s*[x*]*\s*(\d{3,18})(?!\d)/i;
+
+const UNKNOWN: BankAccount = { id: 'unknown', brandId: 'unknown', name: 'Unidentified bank', label: 'Unidentified bank' };
 
 function headerToken(sender: string): string {
-  const compact = sender.replace(/[^A-Za-z0-9]/g, '').toLowerCase();
-  if (/^[a-z]{2}[a-z0-9]{4,10}$/.test(compact)) {
-    return compact.slice(2);
-  }
-  return compact.slice(0, 12) || 'unknown';
+  return sender.trim().replace(/^[a-z]{2}-/i, '').replace(/-[a-z]$/i, '').replace(/[^a-z0-9]/gi, '').toLowerCase();
 }
 
-function matchListed(
-  token: string,
-  text: string,
-  list: { id: string; name: string; codes: string[]; words: RegExp }[],
-) {
-  return (
-    list.find((bank) => bank.codes.some((code) => token === code || token.startsWith(code))) ??
-    list.find((bank) => bank.words.test(text))
-  );
+function bankFromBody(body: string) {
+  // A payee's UPI handle is not the customer's bank.
+  const text = body.replace(/[\w.+-]+@[\w.-]+/g, '');
+  const matches = BANKS.flatMap((bank) => {
+    const match = bank.words.exec(text);
+    return match ? [{ bank, length: match[0].length, index: match.index, end: match.index + match[0].length }] : [];
+  });
+  // Prefer a bank immediately attached to an account; otherwise use the most
+  // specific name (South Indian Bank, not Indian Bank; City Union, not Union).
+  matches.sort((a, b) => b.length - a.length);
+  const specific = matches.filter((match, index) => !matches.slice(0, index).some((other) =>
+    other.index <= match.index && other.end >= match.end));
+  return specific.find((match) => /^\s+(?:savings\s+|current\s+)?(?:a\/c|acct?|account)\b/i.test(text.slice(match.end)))?.bank
+    ?? (specific.length === 1 ? specific[0].bank : undefined);
 }
 
-function last4Of(text: string): string {
-  const digits = text.match(LAST4)?.[1] ?? text.match(LAST4_XX)?.[1] ?? '';
-  return digits.slice(-4);
+function bankAccount(bank: typeof BANKS[number], last4 = ''): BankAccount {
+  return { id: last4 ? `${bank.id}-${last4}` : bank.id, brandId: bank.id, name: bank.name,
+    label: last4 ? `${bank.name} · XX${last4}` : bank.name };
 }
 
 export function extractBankAccount(sender: string, body: string): BankAccount {
-  const text = `${sender} ${body}`;
+  if (isCreditCardAccountText(sender, body)) return UNKNOWN;
   const token = headerToken(sender);
-  const fromBody = text.match(FROM_BANK)?.[1] ?? '';
-  const bank =
-    matchListed(headerToken(fromBody), fromBody || text, BANKS) ??
-    matchListed(token, text, BANKS) ??
-    matchListed(token, text, WALLETS);
-  const last4 = last4Of(text);
-  const brandId = bank?.id ?? token;
-  const name = bank?.name ?? (token.toUpperCase() || 'Unknown bank');
-  const id = last4 ? `${brandId}-${last4}` : brandId;
-  return {
-    id,
-    brandId,
-    name,
-    label: last4 ? `${name} · XX${last4}` : name,
-  };
+  const bank = BANKS.find((entry) => entry.codes.includes(token)) ?? bankFromBody(body);
+  return bank ? bankAccount(bank, body.match(LAST4)?.[1]?.slice(-4)) : UNKNOWN;
 }
 
 export function accountOf(item: ParsedItem | LedgerItem): BankAccount {
-  if (item.bankId && item.bankLabel) {
-    const last4 = item.bankId.match(/-(\d{3,4})$/)?.[1] ?? '';
-    const brandId = item.bankId.replace(/-\d{3,4}$/, '') || item.bankId;
-    const name = item.bankLabel.replace(/\s*·\s*XX\d{3,4}$/, '');
-    return { id: item.bankId, brandId, name, label: item.bankLabel };
+  if (isCreditCardAccount(item)) return UNKNOWN;
+  const source = item.sourceBody || [item.merchant, item.review, item.note].filter(Boolean).join(' ');
+  const detected = extractBankAccount(item.sender ?? '', source);
+  if (detected.brandId !== 'unknown') return detected;
+  // Old rows may lack the original SMS. Accept only known saved IDs and
+  // regenerate labels from the registry, never from an arbitrary saved label.
+  const saved = item.bankId?.match(/^([a-z]+)(?:-(\d{3,4}))?$/);
+  const bank = saved && BANKS.find((entry) => entry.id === saved[1]);
+  if (bank) {
+    const cardNumber = /\bcard\b/i.test(source);
+    return bankAccount(bank, source.match(LAST4)?.[1]?.slice(-4) ?? (cardNumber ? '' : saved[2]));
   }
-  return extractBankAccount('', [item.merchant, item.review, item.note].filter(Boolean).join(' '));
+  return UNKNOWN;
 }
 
 export function withAccount<T extends ParsedItem>(item: T, sender = '', body = ''): T {
-  const hint = body || [item.merchant, item.review, item.note].filter(Boolean).join(' ');
-  const bank =
-    item.bankId && item.bankLabel
-      ? accountOf(item)
-      : extractBankAccount(sender, hint);
+  const bank = accountOf({ ...item, sender: sender || item.sender, sourceBody: body || item.sourceBody });
   return { ...item, bankId: bank.id, bankLabel: bank.label };
 }
 
@@ -129,6 +132,7 @@ export function listBankAccounts(items: LedgerItem[], now = new Date()): BankAcc
       continue;
     }
     const account = accountOf(item);
+    if (account.brandId === 'unknown') continue;
     const current = buckets.get(account.id) ?? {
       id: account.id,
       brandId: account.brandId,
@@ -158,9 +162,15 @@ export function listBankAccounts(items: LedgerItem[], now = new Date()): BankAcc
 
   const listed: BankAccountTotal[] = [];
   for (const group of byBrand.values()) {
-    if (group.length === 1) {
+    // Some alerts identify the bank but omit the account number. They do not
+    // establish another account alongside the bank's one known account.
+    if (group.filter((account) => account.id !== account.brandId).length <= 1) {
       const one = group[0];
-      listed.push({ ...one, id: one.brandId, label: one.name });
+      listed.push({ ...one, id: one.brandId, label: one.name,
+        income: group.reduce((total, account) => total + account.income, 0),
+        spend: group.reduce((total, account) => total + account.spend, 0),
+        count: group.reduce((total, account) => total + account.count, 0),
+      });
     } else {
       listed.push(...group);
     }
@@ -173,5 +183,5 @@ export function inBankAccount(item: LedgerItem, bankId: string | null): boolean 
     return true;
   }
   const account = accountOf(item);
-  return account.id === bankId || account.brandId === bankId;
+  return account.brandId !== 'unknown' && (account.id === bankId || account.brandId === bankId);
 }

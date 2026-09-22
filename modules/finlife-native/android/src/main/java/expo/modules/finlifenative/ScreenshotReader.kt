@@ -1,21 +1,31 @@
 package expo.modules.finlifenative
 
 import android.content.ContentUris
+import android.content.ContentValues
 import android.content.Context
+import android.app.ActivityManager
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
 import android.net.Uri
 import android.os.Build
+import android.os.Environment
 import android.provider.MediaStore
+import androidx.exifinterface.media.ExifInterface
 import com.google.android.gms.tasks.Tasks
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import com.googlecode.tesseract.android.TessBaseAPI
 import java.io.File
 import java.security.MessageDigest
-import java.util.concurrent.TimeUnit
 
 /** Scoped MediaStore access; never reads unrelated photo folders or uploads images. */
 internal object ScreenshotReader {
+  private const val MAX_OCR_EDGE = 4096
+  private const val MIN_MAL_BYTES = 4_000_000L
+  private const val MIN_ENG_BYTES = 3_000_000L
+
   fun folders(context: Context): List<Map<String, Any>> {
     val collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
     val counts = linkedMapOf<String, Int>()
@@ -114,22 +124,170 @@ internal object ScreenshotReader {
     return digest.digest().joinToString("") { "%02x".format(it) }
   }
 
-  fun recognize(context: Context, value: String): String {
+  fun saveGenerated(context: Context, value: String): String {
+    val source = localUri(context, value)
+    val name = "ProxAI-${System.currentTimeMillis()}.png"
+    val values = ContentValues().apply {
+      put(MediaStore.Images.Media.DISPLAY_NAME, name)
+      put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+      if (Build.VERSION.SDK_INT >= 29) {
+        put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/ProxAI")
+        put(MediaStore.Images.Media.IS_PENDING, 1)
+      }
+    }
+    val collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+    val dest = context.contentResolver.insert(collection, values)
+      ?: throw IllegalStateException("Could not create a Photos entry")
+    try {
+      context.contentResolver.openOutputStream(dest)?.use { output ->
+        context.contentResolver.openInputStream(source)?.use { input -> input.copyTo(output) }
+          ?: throw IllegalArgumentException("Expected a local image")
+      } ?: throw IllegalStateException("Could not write the image")
+      if (Build.VERSION.SDK_INT >= 29) {
+        values.clear()
+        values.put(MediaStore.Images.Media.IS_PENDING, 0)
+        context.contentResolver.update(dest, values, null, null)
+      }
+    } catch (error: Exception) {
+      context.contentResolver.delete(dest, null, null)
+      throw error
+    }
+    return dest.toString()
+  }
+
+  @Synchronized
+  fun recognize(context: Context, value: String, malayalam: Boolean = false, compact: Boolean = false): String {
     val uri = localUri(context, value)
+    if (compact) {
+      val memory = ActivityManager.MemoryInfo()
+      (context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager).getMemoryInfo(memory)
+      check(!memory.lowMemory && memory.availMem >= 128L * 1024 * 1024) {
+        "Not enough free memory to read this image while chat is loaded. Choose a smaller chat model and try again."
+      }
+    }
+    val bitmap = try {
+      decodeOcrBitmap(context, uri, compact)
+    } catch (error: OutOfMemoryError) {
+      throw IllegalStateException("Not enough memory to open this image. Try a smaller image or chat model.", error)
+    }
+    try {
+      if (malayalam) {
+        val dataRoot = prepareMalayalamData(context)
+        val recognizer = TessBaseAPI()
+        try {
+          check(recognizer.init(dataRoot.absolutePath, "mal+eng", TessBaseAPI.OEM_LSTM_ONLY)) {
+            "Could not initialize offline Malayalam OCR. Reinstall the updated Android build."
+          }
+          recognizer.setPageSegMode(TessBaseAPI.PageSegMode.PSM_AUTO_OSD)
+          recognizer.setVariable("preserve_interword_spaces", "1")
+          recognizer.setVariable("user_defined_dpi", "300")
+          recognizer.setImage(bitmap)
+          return recognizer.getUTF8Text().orEmpty().trim()
+        } finally {
+          recognizer.recycle()
+        }
+      }
+      val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+      try {
+        // Do not recycle the bitmap while ML Kit is still reading it after a timeout.
+        return Tasks.await(recognizer.process(InputImage.fromBitmap(bitmap, 0))).text
+      } finally {
+        recognizer.close()
+      }
+    } catch (error: OutOfMemoryError) {
+      throw IllegalStateException("Not enough memory for OCR. Try a smaller image or chat model.", error)
+    } finally {
+      bitmap.recycle()
+    }
+  }
+
+  private fun decodeOcrBitmap(context: Context, uri: Uri, compact: Boolean): Bitmap {
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     context.contentResolver.openInputStream(uri)!!.use { BitmapFactory.decodeStream(it, null, bounds) }
     require(bounds.outWidth > 0 && bounds.outHeight > 0) { "Image cannot be decoded" }
-    val options = BitmapFactory.Options().apply { inSampleSize = 1 }
-    while (maxOf(bounds.outWidth, bounds.outHeight) / options.inSampleSize > 4096) options.inSampleSize *= 2
-    val bitmap = context.contentResolver.openInputStream(uri)!!.use { BitmapFactory.decodeStream(it, null, options) }
-      ?: throw IllegalArgumentException("Image cannot be decoded")
-    val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+    val options = BitmapFactory.Options().apply {
+      inSampleSize = OcrDecodeBudget.sampleSize(
+        bounds.outWidth, bounds.outHeight,
+        if (compact) OcrDecodeBudget.CHAT_MAX_EDGE else MAX_OCR_EDGE,
+        if (compact) OcrDecodeBudget.CHAT_MAX_PIXELS else MAX_OCR_EDGE.toLong() * MAX_OCR_EDGE,
+      )
+      inPreferredConfig = Bitmap.Config.ARGB_8888
+      inScaled = false
+    }
+    var bitmap = context.contentResolver.openInputStream(uri)!!.use {
+      BitmapFactory.decodeStream(it, null, options)
+    } ?: throw IllegalArgumentException("Image cannot be decoded")
     try {
-      val result = Tasks.await(recognizer.process(InputImage.fromBitmap(bitmap, 0)), 30, TimeUnit.SECONDS)
-      return result.text
-    } finally {
-      recognizer.close()
+      bitmap = applyExifOrientation(context, uri, bitmap)
+      return ensureArgb8888(bitmap)
+    } catch (error: Throwable) {
+      bitmap.recycle()
+      throw error
+    }
+  }
+
+  private fun applyExifOrientation(context: Context, uri: Uri, bitmap: Bitmap): Bitmap {
+    val orientation = context.contentResolver.openInputStream(uri)!!.use { stream ->
+      ExifInterface(stream).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+    }
+    val matrix = Matrix()
+    when (orientation) {
+      ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
+      ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
+      ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
+      ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.preScale(-1f, 1f)
+      ExifInterface.ORIENTATION_FLIP_VERTICAL -> matrix.preScale(1f, -1f)
+      ExifInterface.ORIENTATION_TRANSPOSE -> {
+        matrix.postRotate(90f)
+        matrix.preScale(-1f, 1f)
+      }
+      ExifInterface.ORIENTATION_TRANSVERSE -> {
+        matrix.postRotate(270f)
+        matrix.preScale(-1f, 1f)
+      }
+      else -> return bitmap
+    }
+    val rotated = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+    if (rotated !== bitmap) {
       bitmap.recycle()
     }
+    return rotated
+  }
+
+  private fun ensureArgb8888(bitmap: Bitmap): Bitmap {
+    if (bitmap.config == Bitmap.Config.ARGB_8888) {
+      return bitmap
+    }
+    val converted = bitmap.copy(Bitmap.Config.ARGB_8888, true)
+    bitmap.recycle()
+    return converted
+  }
+
+  // Bundled files: no network or extra permissions. Version the directory when data changes.
+  // Called under recognize's lock; atomic copies also recover from interrupted first use.
+  private fun prepareMalayalamData(context: Context): File {
+    val root = File(context.noBackupFilesDir, "ocr-fast-87416418")
+    val data = File(root, "tessdata")
+    check(data.isDirectory || data.mkdirs()) { "Could not create offline OCR directory" }
+    val expectedSizes = mapOf("mal" to MIN_MAL_BYTES, "eng" to MIN_ENG_BYTES)
+    for (language in listOf("mal", "eng")) {
+      val target = File(data, "$language.traineddata")
+      val minBytes = expectedSizes.getValue(language)
+      if (target.isFile && target.length() >= minBytes) continue
+      target.delete()
+      val pending = File(data, "$language.traineddata.tmp")
+      try {
+        context.assets.open("tessdata/$language.traineddata").use { input ->
+          pending.outputStream().use { output -> input.copyTo(output) }
+        }
+        check(pending.length() >= minBytes) {
+          "Offline OCR language file for $language looks incomplete. Reinstall the app."
+        }
+        check(pending.renameTo(target)) { "Could not install offline OCR language" }
+      } finally {
+        pending.delete()
+      }
+    }
+    return root
   }
 }

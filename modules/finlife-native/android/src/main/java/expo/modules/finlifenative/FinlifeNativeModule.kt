@@ -16,13 +16,29 @@ import android.provider.CalendarContract
 import android.provider.Telephony
 import androidx.core.content.ContextCompat
 import expo.modules.kotlin.modules.Module
+import expo.modules.kotlin.Promise
 import expo.modules.kotlin.modules.ModuleDefinition
 import java.util.Calendar
 import kotlin.math.max
 
 class FinlifeNativeModule : Module() {
+  private var downloadContext: Context? = null
+  private var chatOcrContext: Context? = null
+
   override fun definition() = ModuleDefinition {
     Name("FinlifeNative")
+
+    AsyncFunction("cancelModelDownloads") {
+      val context = appContextOrThrow().applicationContext
+      downloadContext = context
+      ModelDownloadCleanup.cancel(context)
+    }
+
+    OnDestroy {
+      // A JS reload must not leave Android transferring files after its UI disappears.
+      downloadContext?.let { context -> runCatching { ModelDownloadCleanup.cancel(context) } }
+      chatOcrContext?.let { ChatOcrService.stop(it) }
+    }
 
     AsyncFunction("getMemorySnapshot") {
       memorySnapshot()
@@ -103,6 +119,31 @@ class FinlifeNativeModule : Module() {
 
     AsyncFunction("recognizeScreenshot") { uri: String ->
       ScreenshotReader.recognize(appContextOrThrow(), uri)
+    }
+
+    AsyncFunction("recognizeMalayalamScreenshot") { uri: String ->
+      ScreenshotReader.recognize(appContextOrThrow(), uri, malayalam = true)
+    }
+
+    AsyncFunction("beginChatOcr") { promise: Promise ->
+      val context = appContextOrThrow().applicationContext
+      chatOcrContext = context
+      ChatOcrService.start(context) { error ->
+        if (error == null) promise.resolve()
+        else promise.reject("CHAT_OCR_START", error.message, error)
+      }
+    }
+
+    AsyncFunction("endChatOcr") {
+      chatOcrContext?.let { ChatOcrService.stop(it) }
+    }
+
+    AsyncFunction("recognizeChatImage") { uri: String, malayalam: Boolean ->
+      ScreenshotReader.recognize(appContextOrThrow(), uri, malayalam, compact = true)
+    }
+
+    AsyncFunction("saveGeneratedImage") { uri: String ->
+      ScreenshotReader.saveGenerated(appContextOrThrow(), uri)
     }
   }
 

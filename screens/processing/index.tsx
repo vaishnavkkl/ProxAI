@@ -1,23 +1,27 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
+import { AppPressable as Pressable } from '@/components/app-pressable';
+
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppDialog, type DialogAction } from '@/components/app-dialog';
 import { AppText } from '@/components/app-text';
+import { LlmPerformanceCard } from '@/components/llm-performance-card';
 import { MemoryUsageCard } from '@/components/memory-usage-card';
 import { ProgressMeter } from '@/components/progress-meter';
 import { freeAppMemory } from '@/services/app-memory';
+import { useResourceMonitor } from '@/hooks/use-resource-monitor';
 import { useUiStore } from '@/store/ui-store';
 import { borderRadius, colors, layout, spacing } from '@/styles';
 import { bottomSafeInset } from '@/utils/safe-area';
 
 export function Processing() {
+  useResourceMonitor();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const isProcessing = useUiStore((s) => s.isProcessing);
-  const workKind = useUiStore((s) => s.workKind);
   const llmProgress = useUiStore((s) => s.llmProgress);
   const llmLabel = useUiStore((s) => s.llmLabel);
   const memoryModelMb = useUiStore((s) => s.memoryModelMb);
@@ -35,12 +39,9 @@ export function Processing() {
   const setToast = useUiStore((s) => s.setToast);
   const [dialog, setDialog] = useState<{ title: string; message: string; actions: DialogAction[] } | null>(null);
 
-  const downloading = workKind === 'download';
   const freeBlocked = isProcessing || imageBusy;
-  const title = isProcessing ? (downloading ? 'Downloading model' : 'Working…') : 'App resources';
-  const fallback = downloading
-    ? 'Saving the on-device model to this phone…'
-    : isProcessing
+  const title = isProcessing ? 'Scanning…' : 'App resources';
+  const fallback = isProcessing
       ? 'Reading messages on this phone…'
       : 'App heap is this process. Device RAM is the whole phone.';
   const slotLine = modelInRam && imageInRam
@@ -55,7 +56,7 @@ export function Processing() {
     if (freeBlocked) {
       setToast({
         kind: 'info',
-        message: imageBusy ? 'Wait for the image to finish, or tap Stop first.' : 'Wait for Refresh or a download to finish.',
+        message: imageBusy ? 'Wait for the image to finish, or tap Stop first.' : 'Wait for Refresh to finish.',
       });
       return;
     }
@@ -118,6 +119,7 @@ export function Processing() {
             </View>
           </View>
         </View>
+        <LlmPerformanceCard />
         <MemoryUsageCard
           availMb={memoryAvailMb}
           diskMb={memoryDiskMb}

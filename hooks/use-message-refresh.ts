@@ -3,24 +3,12 @@ import { type Href, useRouter } from 'expo-router';
 
 import { listMailAccounts, requestCalendarAccess } from '@/services/device-calendar';
 import { processRefreshMessages } from '@/services/llm-service';
-import { readHeapBytes, readMemory } from '@/services/memory-monitor';
 import { useSettingsStore } from '@/store/settings-store';
 import { useUiStore } from '@/store/ui-store';
+import { isModelTimeout } from '@/services/model-deadline';
+import { paintFeedback } from '@/utils/paint-feedback';
 
 let pendingMailPick: ((account: string | null) => void) | null = null;
-
-function publishMemory(reading: Awaited<ReturnType<typeof readMemory>>) {
-  const toMb = (bytes: number) => bytes / (1024 * 1024);
-  useUiStore.getState().setMemory({
-    usedMb: toMb(reading.usedBytes),
-    availMb: toMb(reading.availBytes),
-    totalMb: toMb(reading.totalBytes),
-    modelMb: toMb(reading.modelBytes),
-    diskMb: toMb(reading.diskBytes),
-    deviceUsedMb: toMb(reading.deviceUsedBytes),
-    deviceTotalMb: toMb(reading.deviceTotalBytes),
-  });
-}
 
 export function useMessageRefresh() {
   const router = useRouter();
@@ -60,6 +48,10 @@ export function useMessageRefresh() {
     }
 
     let skipMailScan = false;
+    setProcessing(true);
+    setWorkKind('scan');
+    setProgress(0.01, 'Preparing scan…');
+    await paintFeedback();
     try {
       await requestCalendarAccess();
       const accounts = await listMailAccounts();
@@ -81,21 +73,8 @@ export function useMessageRefresh() {
     setWorkKind('scan');
     setProgress(0.02, 'Scanning this phone…');
     setToast({ kind: 'info', message: 'Scanning SMS, Calendar, and subscription apps…' });
-    useUiStore.getState().clearMemory();
 
-    let timer: ReturnType<typeof setInterval> | undefined;
     try {
-      try {
-        const baselineHeap = await readHeapBytes();
-        const first = await readMemory(baselineHeap);
-        publishMemory(first);
-        timer = setInterval(() => {
-          void readMemory(baselineHeap).then(publishMemory);
-        }, 250);
-      } catch {
-        // Memory readout is optional. The scan still runs.
-      }
-
       const result = await processRefreshMessages((progress, label) => {
         setProgress(progress, label);
       }, { skipMail: skipMailScan });
@@ -135,15 +114,12 @@ export function useMessageRefresh() {
           ? `Read ${result.read ?? 0} SMS in this batch. Tap Refresh again for the rest.`
           : `Read ${result.read ?? 0} SMS. Nothing new in SMS, Calendar, or apps.`,
       });
-    } catch {
+    } catch (error) {
       setToast({
         kind: 'info',
-        message: 'Scan stopped early. Anything already found is saved. Tap Refresh to continue.',
+        message: isModelTimeout(error) ? (error as Error).message : 'Scan stopped early. Anything already found is saved. Tap Refresh to continue.',
       });
     } finally {
-      if (timer) {
-        clearInterval(timer);
-      }
       setProcessing(false);
       setProgress(0, '');
     }

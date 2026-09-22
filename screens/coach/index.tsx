@@ -1,64 +1,56 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { paintFeedback } from '@/utils/paint-feedback';
+import { isModelTimeout } from '@/services/model-deadline';
 import { useNavigation } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  FlatList,
-  Pressable,
-  StyleSheet,
-  TextInput,
-  View,
-} from 'react-native';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { FlatList, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { AppPressable as Pressable } from '@/components/app-pressable';
+import { LogoLoader as ActivityIndicator } from '@/components/logo-loader';
+
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppBottomSheet } from '@/components/app-bottom-sheet';
 import { AppDialog } from '@/components/app-dialog';
 import { AppText } from '@/components/app-text';
 import { CoachTyping } from '@/components/coach-typing';
+import { ChatOcrButton } from '@/components/chat-ocr-button';
+import { ModelRamCaption } from '@/components/model-ram-caption';
 import { ScreenBack } from '@/components/screen-back';
 import { useKeyboardInset } from '@/hooks/use-keyboard-inset';
 import {
-  askCoach,
-  getModelAvailability,
-  getModelRamState,
-  interruptCoach,
-  loadCoachSession,
-  switchOnDeviceModel,
-  unloadCoachSession,
+    askCoach,
+    getModelAvailability,
+    getModelRamState,
+    interruptCoach,
+    loadCoachSession,
+    switchOnDeviceModel,
+    unloadCoachSession,
 } from '@/services/llm-service';
-import { CATALOG, getCatalogModel, resolveModelSources, type ModelId } from '@/services/model-catalog';
+import { getCatalogModel, resolveModelSources, type ModelId } from '@/services/model-catalog';
+import { chatModelsForOcr, ensureChatModelForOcr } from '@/services/ocr-chat-model';
 import { hasCachedSources } from '@/services/model-storage';
 import { useBudgetStore } from '@/store/budget-store';
 import { useCoachStore, type CoachBubble } from '@/store/coach-store';
-import { useLifeStore } from '@/store/life-store';
 import { useEventStore } from '@/store/event-store';
-import { useSubscriptionStore } from '@/store/subscription-store';
+import { useLifeStore } from '@/store/life-store';
 import { useSettingsStore } from '@/store/settings-store';
+import { useSubscriptionStore } from '@/store/subscription-store';
 import { useTransactionStore } from '@/store/transaction-store';
 import { useUiStore } from '@/store/ui-store';
 import { borderRadius, colors, gradients, layout, spacing } from '@/styles';
 import { formatCoachTime } from '@/utils/coach-pin';
-import { nextCoachPrompts } from '@/utils/coach-prompts';
+import { chatSuggestions, latestSuggestionContext } from '@/utils/chat-suggestions';
 import { toInrText } from '@/utils/format-inr';
 import { summarizeMonth } from '@/utils/month-finance';
 import { relevantEvents } from '@/utils/relevant-events';
 import { bottomSafeInset } from '@/utils/safe-area';
 import { buildSpendPlan, coachDisplayedReply, coachOpenLife, coachSnapshot, fallbackCoachReply } from '@/utils/spend-coach';
 
-function lastUserQuestion(items: CoachBubble[]) {
-  for (let index = items.length - 1; index >= 0; index -= 1) {
-    if (items[index].role === 'user') {
-      return items[index].text;
-    }
-  }
-  return null;
-}
-
 function keyExtractor(item: CoachBubble) {
   return item.id;
 }
 
-function CoachBubbleRow({ item }: { item: CoachBubble }) {
+const CoachBubbleRow = memo(function CoachBubbleRow({ item }: { item: CoachBubble }) {
   const pinned = useCoachStore((s) => s.pins.some((pin) => pin.messageId === item.id));
   const togglePin = useCoachStore((s) => s.togglePin);
   const setToast = useUiStore((s) => s.setToast);
@@ -67,10 +59,10 @@ function CoachBubbleRow({ item }: { item: CoachBubble }) {
 
   return (
     <View style={user ? styles.userWrap : styles.botWrap}>
-      <AppText style={user ? styles.userText : styles.botText} variant="bodyRegular">
+      <AppText selectable={!item.pending} style={user ? styles.userText : styles.botText} variant="bodyRegular">
         {user ? item.text : toInrText(item.text)}
       </AppText>
-      {user ? (
+      {item.pending ? null : user ? (
         when ? <AppText style={styles.userTime} variant="caption">{when}</AppText> : null
       ) : (
         <View style={styles.meta}>
@@ -98,18 +90,67 @@ function CoachBubbleRow({ item }: { item: CoachBubble }) {
       )}
     </View>
   );
-}
+});
 
 function renderBubble({ item }: { item: CoachBubble }) {
   return <CoachBubbleRow item={item} />;
 }
 
+
+const CoachThread = memo(function CoachThread({ switching, switchLabel }: { switching: boolean; switchLabel: string }) {
+  const listRef = useRef<FlatList<CoachBubble>>(null);
+  const followEnd = useRef(true);
+  const messages = useCoachStore((s) => s.messages);
+  const busy = useCoachStore((s) => s.busy);
+  const status = useCoachStore((s) => s.status);
+  const lastMessage = messages[messages.length - 1];
+  const streaming = busy && lastMessage?.role === 'assistant' && lastMessage.text.length > 0;
+  useEffect(() => {
+    followEnd.current = true;
+  }, [messages.length]);
+  return (
+        <FlatList
+          ListEmptyComponent={
+            <View style={styles.emptyCard}>
+              <AppText variant="h4">Ask about your day and plans</AppText>
+              <AppText style={styles.empty} variant="bodyRegular">
+                Your assistant reads tasks, travel, deliveries, and reminders from this phone. Money stays
+                in Finance. Replies stream as they are written. Pin a reply to keep a short summary on Home.
+              </AppText>
+            </View>
+          }
+          ListFooterComponent={!streaming && (busy || switching) ? <CoachTyping label={switching ? switchLabel : status} /> : null}
+          contentContainerStyle={styles.thread}
+          data={messages}
+          keyExtractor={keyExtractor}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          onContentSizeChange={() => {
+            if (followEnd.current) listRef.current?.scrollToEnd({ animated: false });
+          }}
+          onLayout={() => {
+            if (followEnd.current) listRef.current?.scrollToEnd({ animated: false });
+          }}
+          onScroll={({ nativeEvent: { contentOffset, contentSize, layoutMeasurement } }) => {
+            followEnd.current = contentSize.height - layoutMeasurement.height - contentOffset.y < 100;
+          }}
+          scrollEventThrottle={100}
+          initialNumToRender={12}
+          maxToRenderPerBatch={6}
+          windowSize={7}
+          ref={listRef}
+          renderItem={renderBubble}
+          style={styles.flex}
+        />
+  );
+});
+
 export function Coach() {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const keyboard = useKeyboardInset();
-  const listRef = useRef<FlatList<CoachBubble>>(null);
   const released = useRef(false);
+  const replyStopped = useRef(false);
   const leaveAction = useRef<{ type: string } | null>(null);
   const items = useTransactionStore((s) => s.financeItems);
   const events = useEventStore((s) => s.items);
@@ -118,9 +159,8 @@ export function Coach() {
   const subscriptions = useSubscriptionStore((s) => s.items);
   const salary = useBudgetStore((s) => s.salary);
   const expenses = useBudgetStore((s) => s.expenses);
-  const messages = useCoachStore((s) => s.messages);
+  const suggestionContext = useCoachStore((s) => latestSuggestionContext(s.messages));
   const busy = useCoachStore((s) => s.busy);
-  const status = useCoachStore((s) => s.status);
   const append = useCoachStore((s) => s.append);
   const patch = useCoachStore((s) => s.patch);
   const setBusy = useCoachStore((s) => s.setBusy);
@@ -132,6 +172,8 @@ export function Coach() {
   const isProcessing = useUiStore((s) => s.isProcessing);
   const modelInRam = useUiStore((s) => s.modelInRam);
   const modelId = useSettingsStore((s) => s.modelId);
+  const ocrLanguage = useSettingsStore((s) => s.ocrLanguage);
+  const chatModels = chatModelsForOcr(ocrLanguage);
   const customModelUrl = useSettingsStore((s) => s.customModelUrl);
   const customTokenizerUrl = useSettingsStore((s) => s.customTokenizerUrl);
   const customTokenizerConfigUrl = useSettingsStore((s) => s.customTokenizerConfigUrl);
@@ -141,34 +183,58 @@ export function Coach() {
   const [picking, setPicking] = useState(false);
   const [switching, setSwitching] = useState(false);
   const [switchLabel, setSwitchLabel] = useState('');
+  const [loadingModel, setLoadingModel] = useState(true);
+  const [loadLabel, setLoadLabel] = useState('Loading model…');
+  const [loadError, setLoadError] = useState('');
   const [dialog, setDialog] = useState<'leave' | 'new' | null>(null);
   const [leaving, setLeaving] = useState(false);
+  const [stopping, setStopping] = useState(false);
 
   const catalog = getCatalogModel(modelId);
-  const summary = summarizeMonth(items, salary, expenses);
-  const plan = buildSpendPlan(items, salary, expenses);
-  const lastUser = lastUserQuestion(messages);
-  const prompts = nextCoachPrompts(lastUser, plan);
-  const blocked = busy || isProcessing || switching || leaving;
+  const summary = useMemo(() => summarizeMonth(items, salary, expenses), [items, salary, expenses]);
+  const plan = useMemo(() => buildSpendPlan(items, salary, expenses), [items, salary, expenses]);
+  const prompts = useMemo(() => chatSuggestions(suggestionContext), [suggestionContext]);
+  const blocked = busy || isProcessing || switching || leaving || loadingModel || !!loadError;
   const canSend = !blocked && draft.trim().length > 0;
-  const lastMessage = messages.length ? messages[messages.length - 1] : null;
-  const streaming = busy && lastMessage?.role === 'assistant' && lastMessage.text.length > 0;
   const composerPad = keyboard > 0 ? spacing.sm : bottomSafeInset(insets.bottom) + spacing.sm;
 
   useEffect(() => {
+    let active = true;
+    let acquired = false;
     released.current = false;
+    ensureChatModelForOcr();
     useUiStore.getState().setModelInRam(getModelRamState().loaded);
-    void loadCoachSession(() => undefined)
-      .catch(() => undefined)
-      .finally(() => {
-        useUiStore.getState().setModelInRam(getModelRamState().loaded);
+    // Acquire immediately, before pending OCR asks or manual sends can run.
+    void paintFeedback().then(() => {
+      if (!active) return;
+      acquired = true;
+      return loadCoachSession((_progress, label) => {
+      if (active && !released.current) setLoadLabel(label);
       });
+    })
+    .then(async () => {
+      if (!active) return;
+      if (!getModelRamState().loaded) {
+        const availability = await getModelAvailability();
+        throw new Error(availability.reason || 'Could not load the selected model.');
+      }
+    })
+    .catch((error: unknown) => {
+      if (active && !released.current) {
+        setLoadError(error instanceof Error ? error.message : 'Could not load the selected model.');
+      }
+    })
+    .finally(() => {
+      useUiStore.getState().setModelInRam(getModelRamState().loaded);
+      if (active && !released.current) setLoadingModel(false);
+    });
     return () => {
-      if (released.current) {
+      active = false;
+      if (released.current || !acquired) {
         return;
       }
       interruptCoach();
-      void unloadCoachSession().finally(() => {
+      void unloadCoachSession().catch(() => undefined).finally(() => {
         useUiStore.getState().setModelInRam(getModelRamState().loaded);
       });
     };
@@ -187,23 +253,20 @@ export function Coach() {
   }, [navigation]);
 
   useEffect(() => {
-    if (!pendingAsk || busy || isProcessing || switching || leaving) {
+    if (!pendingAsk || blocked) {
       return;
     }
     const question = pendingAsk;
     setPendingAsk(null);
     void send(question);
-  }, [pendingAsk, busy, isProcessing, switching, leaving]);
+  }, [pendingAsk, blocked]);
 
-  useEffect(() => {
-    listRef.current?.scrollToEnd({ animated: true });
-  }, [messages.length, lastMessage?.text, busy]);
 
   function closeDialog() {
     setDialog(null);
   }
 
-  async function confirmLeave() {
+  function confirmLeave() {
     if (released.current) {
       return;
     }
@@ -213,12 +276,10 @@ export function Coach() {
     interruptCoach();
     startNewChat();
     setDraft('');
-    try {
-      await unloadCoachSession();
-    } catch {
-      // Still leave so a stuck unload cannot keep this session open.
-    }
-    useUiStore.getState().setModelInRam(getModelRamState().loaded);
+    // Release the session through the inference queue without blocking navigation.
+    void unloadCoachSession().catch(() => undefined).finally(() => {
+      useUiStore.getState().setModelInRam(getModelRamState().loaded);
+    });
     const action = leaveAction.current;
     leaveAction.current = null;
     if (action) {
@@ -241,11 +302,11 @@ export function Coach() {
   }
 
   async function chooseModel(id: ModelId) {
-    if (busy || isProcessing || switching) {
+    if (busy || isProcessing || switching || loadingModel || leaving) {
       setToast({ kind: 'info', message: 'Wait for the current reply to finish before switching models.' });
       return;
     }
-    if (id === modelId) {
+    if (id === modelId && modelInRam && !loadError) {
       setPicking(false);
       return;
     }
@@ -260,6 +321,7 @@ export function Coach() {
     if (!onDisk) {
       setModelId(id);
       setPicking(false);
+      setLoadError(`${getCatalogModel(id).label} is not on this phone. Download it in Settings first.`);
       setToast({
         kind: 'info',
         message: `${getCatalogModel(id).label} is not on this phone. Download it in Settings, then it loads here.`,
@@ -271,9 +333,11 @@ export function Coach() {
     setSwitchLabel('Unloading the previous model…');
     setModelId(id);
     try {
+      await paintFeedback();
       await switchOnDeviceModel((_progress, label) => {
         setSwitchLabel(label);
       });
+      setLoadError('');
       useUiStore.getState().setModelInRam(getModelRamState().loaded);
       setToast({
         kind: 'success',
@@ -281,6 +345,7 @@ export function Coach() {
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not switch models.';
+      setLoadError(message === 'unavailable' ? 'Needs the Android development build.' : message);
       setToast({
         kind: 'error',
         message: message === 'unavailable' ? 'Needs the Android development build.' : message,
@@ -294,7 +359,7 @@ export function Coach() {
 
   async function send(text: string) {
     const question = text.trim();
-    if (!question || useCoachStore.getState().busy) {
+    if (!question || useCoachStore.getState().busy || loadingModel || loadError || leaving) {
       return;
     }
     if (isProcessing) {
@@ -307,10 +372,16 @@ export function Coach() {
     }
 
     const epoch = useCoachStore.getState().epoch;
-    append('user', question);
+    replyStopped.current = false;
+    setStopping(false);
+    const userId = append('user', question, true).id;
     setDraft('');
     setBusy(true);
-    setStatus('Looking at your plans…');
+    setStatus(getModelRamState().loaded ? 'Preparing response…' : `Loading ${catalog.label}…`);
+
+    // Let the pending bubble/loading indicator render before reading context.
+    await paintFeedback();
+    if (useCoachStore.getState().epoch !== epoch) return;
 
     const openLife = coachOpenLife(life, lifeStates);
     const snapshot = coachSnapshot({
@@ -347,7 +418,7 @@ export function Coach() {
                 return;
               }
               if (!assistantId) {
-                assistantId = useCoachStore.getState().append('assistant', streamed).id;
+                assistantId = useCoachStore.getState().append('assistant', streamed, true).id;
                 setStatus('');
                 return;
               }
@@ -358,7 +429,9 @@ export function Coach() {
       if (useCoachStore.getState().epoch !== epoch) {
         return;
       }
-      const shown = coachDisplayedReply(reply, fallback, ready, availability.reason);
+      const shown = replyStopped.current && !reply.trim()
+        ? 'Response stopped.'
+        : coachDisplayedReply(reply, fallback, ready, availability.reason);
       if (!assistantId) {
         append('assistant', shown);
       } else if (!reply.trim()) {
@@ -371,7 +444,7 @@ export function Coach() {
         return;
       }
       const reason = error instanceof Error ? error.message : 'Could not run the on-device model.';
-      const text = coachDisplayedReply('', fallback, false, reason);
+      const text = isModelTimeout(error) ? reason : replyStopped.current ? 'Response stopped.' : coachDisplayedReply('', fallback, false, reason);
       if (!assistantId) {
         append('assistant', text);
       } else {
@@ -379,6 +452,9 @@ export function Coach() {
       }
     } finally {
       if (useCoachStore.getState().epoch === epoch) {
+        useCoachStore.getState().finish(userId);
+        if (assistantId) useCoachStore.getState().finish(assistantId);
+        setStopping(false);
         setBusy(false);
         setStatus('');
       }
@@ -394,7 +470,7 @@ export function Coach() {
           accessibilityHint="Opens models on this phone or marks one to download in Settings"
           accessibilityLabel={`${catalog.label}. ${modelInRam ? 'Loaded in RAM' : 'Not loaded'}. Tap to switch`}
           accessibilityRole="button"
-          disabled={switching}
+          disabled={switching || loadingModel || leaving}
           onPress={openPicker}
           style={styles.titleCopy}>
           <View style={styles.titleRow}>
@@ -403,13 +479,20 @@ export function Coach() {
               {catalog.label}
             </AppText>
           </View>
-          <AppText style={modelInRam ? styles.modelOn : styles.modelOff} variant="caption">
-            {switching
-              ? switchLabel || 'Unloading the previous model…'
-              : modelInRam
-                ? 'Loaded · tap to switch'
-                : 'Not in RAM · tap to switch'}
-          </AppText>
+          {catalog.malayalam ? (
+            <AppText style={styles.modelOff} variant="caption">
+              Malayalam supported
+            </AppText>
+          ) : null}
+          {loadingModel ? (
+            <AppText style={styles.loadingLabel} variant="caption">{loadLabel}</AppText>
+          ) : switching ? (
+            <AppText style={styles.modelOff} variant="caption">
+              {switchLabel || 'Unloading the previous model…'}
+            </AppText>
+          ) : (
+            <ModelRamCaption loadBytes={catalog.modelBytes} loaded={modelInRam} paused={busy || switching} />
+          )}
         </Pressable>
         <Pressable
           accessibilityRole="button"
@@ -423,7 +506,7 @@ export function Coach() {
         </Pressable>
       </View>
 
-      <AppBottomSheet
+      {picking ? <AppBottomSheet
         accessibilityLabel="Close on-device models"
         onClose={() => {
           setPicking(false);
@@ -431,9 +514,11 @@ export function Coach() {
         title="On this phone"
         visible={picking}>
         <AppText variant="bodyRegular">
-          Models already on this phone load immediately. Others stay selected until you download them in Settings. No internet is required to switch a saved model.
+          {ocrLanguage === 'ml'
+            ? 'Malayalam OCR is on, so only Malayalam models are listed for chat. Others stay in Settings after you switch image text back to English.'
+            : 'Models already on this phone load immediately. Others stay selected until you download them in Settings. No internet is required to switch a saved model.'}
         </AppText>
-        {CATALOG.filter((item) => item.id !== 'custom').map((item) => {
+        {chatModels.filter((item) => item.id !== 'custom').map((item) => {
             const active = item.id === modelId;
             const onDisk = hasCachedSources(
               resolveModelSources({
@@ -455,6 +540,9 @@ export function Coach() {
                 style={[styles.modelRow, active ? styles.modelRowOn : undefined]}>
                 <View style={styles.modelCopy}>
                   <AppText variant="labelRegular">{item.label}</AppText>
+                  {item.malayalam ? (
+                    <AppText variant="caption">Malayalam supported</AppText>
+                  ) : null}
                   <AppText variant="caption">
                     {onDisk ? `On this phone · ${item.sizeHint}` : `Not downloaded · ${item.sizeHint}`}
                   </AppText>
@@ -469,35 +557,26 @@ export function Coach() {
               </Pressable>
             );
           })}
-      </AppBottomSheet>
+      </AppBottomSheet> : null}
 
       <View style={[styles.flex, { paddingBottom: keyboard }]}>
-        <FlatList
-          ListEmptyComponent={
-            <View style={styles.emptyCard}>
-              <AppText variant="h4">Ask about your day, plans, and money</AppText>
-              <AppText style={styles.empty} variant="bodyRegular">
-                Your assistant reads tasks, travel, deliveries, bills, screenshots, and spends from this
-                phone. Replies stream as they are written. Pin a reply to keep a short summary on Home.
-              </AppText>
-            </View>
-          }
-          ListFooterComponent={!streaming && (busy || switching) ? <CoachTyping label={switchLabel || status} /> : null}
-          contentContainerStyle={styles.thread}
-          data={messages}
-          extraData={`${messages.length}:${lastMessage?.text ?? ''}:${busy}:${switching}`}
-          keyExtractor={keyExtractor}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
-          onContentSizeChange={() => {
-            listRef.current?.scrollToEnd({ animated: true });
-          }}
-          ref={listRef}
-          renderItem={renderBubble}
-          style={styles.flex}
-        />
+        <CoachThread switching={switching || loadingModel} switchLabel={loadingModel ? loadLabel : switchLabel} />
 
-        <View style={styles.chips}>
+        {loadError && !switching ? (
+          <View style={styles.loadError}>
+            <AppText accessibilityRole="alert" style={styles.modelOff} variant="bodySmall">{loadError}</AppText>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Retry loading model"
+              disabled={busy || isProcessing || loadingModel || leaving}
+              onPress={() => void chooseModel(modelId)}
+              style={styles.chip}>
+              <AppText variant="labelSmall">Retry loading model</AppText>
+            </Pressable>
+          </View>
+        ) : null}
+
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={styles.chipsViewport} contentContainerStyle={styles.chips}>
           {prompts.map((prompt) => (
             <Pressable
               accessibilityRole="button"
@@ -512,12 +591,13 @@ export function Coach() {
               </AppText>
             </Pressable>
           ))}
-        </View>
+        </ScrollView>
 
         <View style={[styles.composer, focused ? styles.composerOn : undefined, { marginBottom: composerPad }]}>
+          <ChatOcrButton disabled={blocked} onAsk={setPendingAsk} />
           <TextInput
             accessibilityLabel="Ask the assistant"
-            editable={!switching && !isProcessing}
+            editable={!switching && !isProcessing && !leaving}
             multiline
             onBlur={() => {
               setFocused(false);
@@ -533,19 +613,21 @@ export function Coach() {
           />
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={busy ? 'Stop writing' : 'Send message'}
-            disabled={!busy && !canSend}
+            accessibilityLabel={loadingModel ? 'Loading model' : stopping ? 'Stopping response' : busy ? 'Stop writing' : 'Send message'}
+            disabled={stopping || (!busy && !canSend)}
             onPress={() => {
               if (busy) {
+                setStopping(true);
+                replyStopped.current = true;
                 interruptCoach();
                 return;
               }
               void send(draft);
             }}
             style={[styles.send, busy ? styles.sendStop : canSend ? styles.sendOn : styles.sendOff]}>
-            {busy ? (
+            {stopping ? <ActivityIndicator color={colors.neutral[0]} size="small" /> : busy ? (
               <Ionicons color={colors.neutral[0]} name="stop" size={16} />
-            ) : switching ? (
+            ) : switching || loadingModel ? (
               <ActivityIndicator color={colors.neutral[0]} size="small" />
             ) : (
               <Ionicons color={colors.neutral[0]} name="arrow-up" size={18} />
@@ -625,6 +707,14 @@ const styles = StyleSheet.create({
   modelOff: {
     color: colors.semantic.dangerDark,
   },
+  loadingLabel: {
+    color: colors.primary[600],
+  },
+  loadError: {
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.md,
+    gap: spacing.sm,
+  },
   newChat: {
     width: layout.touchTarget,
     height: layout.touchTarget,
@@ -696,9 +786,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  chipsViewport: {
+    flexGrow: 0,
+    flexShrink: 0,
+  },
   chips: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: spacing.sm,
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.sm,
@@ -735,7 +828,6 @@ const styles = StyleSheet.create({
   },
   composerOn: {
     borderColor: colors.primary[500],
-    borderWidth: 2,
   },
   input: {
     flex: 1,

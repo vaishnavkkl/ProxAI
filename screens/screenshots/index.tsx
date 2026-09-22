@@ -1,10 +1,16 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useEffect, useState } from 'react';
-import { FlatList, Linking, Pressable, StyleSheet, Switch, View } from 'react-native';
+import { FlatList, Linking, StyleSheet, Switch, View } from 'react-native';
+import { AppPressable as Pressable } from '@/components/app-pressable';
+
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppBottomSheet } from '@/components/app-bottom-sheet';
 import { AppText } from '@/components/app-text';
+import { LogoLoader } from '@/components/logo-loader';
+import { paintFeedback } from '@/utils/paint-feedback';
 import { OcrCaptureSheet } from '@/components/ocr-capture-sheet';
+import { OcrLanguagePicker } from '@/components/ocr-language-picker';
 import { ProgressMeter } from '@/components/progress-meter';
 import { ScreenBack } from '@/components/screen-back';
 import { ScreenScaffold } from '@/components/screen-scaffold';
@@ -29,7 +35,7 @@ import {
 } from '@/services/screenshot-scanner';
 import { useCoachStore } from '@/store/coach-store';
 import { useUiStore } from '@/store/ui-store';
-import { colors, spacing, borderRadius } from '@/styles';
+import { borderRadius, colors, gradients, spacing } from '@/styles';
 import { defaultImageFolders } from '@/utils/ocr-blocks';
 import { openCoach } from '@/utils/open-coach';
 
@@ -56,6 +62,7 @@ function keyExtractor(item: ScreenshotScan) {
 }
 
 export function Screenshots() {
+  const insets = useSafeAreaInsets();
   const [month, setMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [rows, setRows] = useState<ScreenshotScan[]>([]);
   const [enabled, setEnabled] = useState(false);
@@ -67,6 +74,10 @@ export function Screenshots() {
   const [ocrUri, setOcrUri] = useState<string | null>(null);
   const [ocrText, setOcrText] = useState('');
   const [showOcr, setShowOcr] = useState(false);
+  const [activeAction, setActiveAction] = useState<'gallery' | 'camera' | 'month' | null>(null);
+  const [loadingRows, setLoadingRows] = useState(true);
+  const [savingFolders, setSavingFolders] = useState(false);
+  const [toggling, setToggling] = useState(false);
   const busy = useUiStore((s) => s.isProcessing);
   const progress = useUiStore((s) => s.llmProgress);
   const label = useUiStore((s) => s.llmLabel);
@@ -76,13 +87,15 @@ export function Screenshots() {
 
   useEffect(() => {
     let active = true;
+    setLoadingRows(true);
     void listScreenshotScans(month)
       .then((items) => {
         if (active) {
           setRows(uniqueScreenshotScans(items));
         }
       })
-      .catch(() => undefined);
+      .catch(() => { if (active) setStatus('Could not load saved scans. Try another month or scan again.'); })
+      .finally(() => { if (active) setLoadingRows(false); });
     return () => {
       active = false;
     };
@@ -98,6 +111,10 @@ export function Screenshots() {
   }, []);
 
   async function enable(value: boolean) {
+    if (toggling) return;
+    setToggling(true);
+    try {
+    await paintFeedback();
     const permission = value ? await screenshotAccess(true) : await screenshotAccess();
     setAccess(permission);
     const next = value && (permission === 'full' || permission === 'limited');
@@ -110,9 +127,16 @@ export function Screenshots() {
           : 'Photo access was not granted. You can allow it in phone settings.',
       );
     }
+    } catch {
+      useUiStore.getState().setToast({ kind: 'error', message: 'Could not update photo access. Please try again.' });
+    } finally { setToggling(false); }
   }
 
   async function saveFolders() {
+    if (savingFolders) return;
+    setSavingFolders(true);
+    try {
+    await paintFeedback();
     await setImageScanFolders(chosenFolders);
     setShowFolders(false);
     useUiStore.getState().setToast({
@@ -121,6 +145,9 @@ export function Screenshots() {
         ? `Next scan uses ${chosenFolders.length} folders.`
         : 'Next scan uses the Screenshots folder.',
     });
+    } catch {
+      useUiStore.getState().setToast({ kind: 'error', message: 'Could not save folders. Please try again.' });
+    } finally { setSavingFolders(false); }
   }
 
   async function ocrFrom(source: 'gallery' | 'camera') {
@@ -129,8 +156,10 @@ export function Screenshots() {
     }
     useUiStore.getState().setWorkKind('scan');
     useUiStore.getState().setProcessing(true);
+    setActiveAction(source);
     useUiStore.getState().setProgress(0.08, source === 'camera' ? 'Opening camera…' : 'Opening gallery…');
     try {
+      await paintFeedback();
       const uri = await pickImageUri(source);
       if (!uri) {
         return;
@@ -144,7 +173,9 @@ export function Screenshots() {
       setStatus(text.trim() ? 'Text is ready to copy or send to the assistant.' : 'No text could be read from that image.');
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Could not read that image.');
+      useUiStore.getState().setToast({ kind: 'error', message: error instanceof Error ? error.message : 'Could not read that image.' });
     } finally {
+      setActiveAction(null);
       useUiStore.getState().setProcessing(false);
       useUiStore.getState().setProgress(0, '');
     }
@@ -158,10 +189,12 @@ export function Screenshots() {
     }
     useUiStore.getState().setWorkKind('scan');
     useUiStore.getState().setProcessing(true);
+    setActiveAction('month');
         useUiStore.getState().setProgress(0.04, 'Opening images…');
     const runtime = getLlmRuntime();
     runtime.beginScan?.();
     try {
+      await paintFeedback();
       const permission = await screenshotAccess(true);
       setAccess(permission);
       const availability = await getModelAvailability().catch(() => ({ status: 'unavailable' as const, reason: '' }));
@@ -191,10 +224,12 @@ export function Screenshots() {
       await notifyScanResult({ events: 0, life: result.added, bills: 0 });
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Could not scan. Try again.');
+      useUiStore.getState().setToast({ kind: 'error', message: error instanceof Error ? error.message : 'Could not scan. Try again.' });
     } finally {
-      await runtime.endScan?.();
+      setActiveAction(null);
       useUiStore.getState().setProcessing(false);
       useUiStore.getState().setProgress(0, '');
+      void runtime.endScan?.().catch(() => undefined);
     }
   }
 
@@ -202,6 +237,7 @@ export function Screenshots() {
     <ScreenScaffold scroll={false} stack>
       <FlatList
         ListEmptyComponent={
+          loadingRows ? <View style={styles.empty}><LogoLoader /><AppText>Loading saved scans…</AppText></View> :
           <View style={styles.empty}>
             <Ionicons color={colors.primary[500]} name="images-outline" size={36} />
             <AppText variant="h4">Scanned images appear here</AppText>
@@ -213,8 +249,54 @@ export function Screenshots() {
         }
         ListHeaderComponent={
           <View style={styles.header}>
-            <ScreenBack accessibilityLabel="Go back" />
-            <SectionHero icon="scan-outline" title="Image intelligence" subtitle="OCR on this phone · copy or ask the assistant" />
+            <SectionHero
+              icon="scan-outline"
+              start={<ScreenBack accessibilityLabel="Go back" tone="inverse" />}
+              subtitle="OCR on this phone · copy or ask the assistant"
+              title="Image intelligence"
+            />
+            <View style={styles.card}>
+              <AppText variant="h4">Read text from an image</AppText>
+              <AppText variant="bodySmall">Choose a photo, then copy its text or send it to chat.</AppText>
+              <View style={styles.sourceOptions}>
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={busy}
+                  onPress={() => {
+                    void ocrFrom('gallery');
+                  }}
+                  style={[styles.sourceOption, busy ? styles.sourceDisabled : undefined]}>
+                  <View style={styles.sourceIcon}>
+                    {activeAction === 'gallery' ? <LogoLoader /> : <Ionicons color={colors.primary[600]} name="images-outline" size={30} />}
+                  </View>
+                  <View style={styles.sourceCopy}>
+                    <AppText variant="labelLarge">From gallery</AppText>
+                    <AppText style={styles.sourceCaption} variant="caption">
+                      Photo on this phone
+                    </AppText>
+                  </View>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={busy}
+                  onPress={() => {
+                    void ocrFrom('camera');
+                  }}
+                  style={[styles.sourceOption, busy ? styles.sourceDisabled : undefined]}>
+                  <View style={styles.sourceIcon}>
+                    {activeAction === 'camera' ? <LogoLoader /> : <Ionicons color={colors.primary[600]} name="camera-outline" size={30} />}
+                  </View>
+                  <View style={styles.sourceCopy}>
+                    <AppText variant="labelLarge">From camera</AppText>
+                    <AppText style={styles.sourceCaption} variant="caption">
+                      Take a photo
+                    </AppText>
+                  </View>
+                </Pressable>
+              </View>
+              <OcrLanguagePicker />
+            </View>
+            <AppText variant="h4">Scan saved images</AppText>
             <View style={styles.card}>
               <View style={styles.row}>
                 <View style={styles.copy}>
@@ -223,13 +305,14 @@ export function Screenshots() {
                 </View>
                 <Switch
                   accessibilityLabel="Include images in Refresh"
-                  disabled={busy}
+                  disabled={busy || toggling}
                   onValueChange={(value) => {
                     void enable(value);
                   }}
                   trackColor={{ true: colors.primary[500], false: colors.neutral[400] }}
                   value={enabled}
                 />
+                {toggling ? <LogoLoader /> : null}
               </View>
             </View>
             <Pressable
@@ -244,42 +327,6 @@ export function Screenshots() {
               </View>
               <Ionicons color={colors.primary[600]} name="folder-open-outline" size={22} />
             </Pressable>
-            <View style={styles.card}>
-              <AppText variant="labelRegular">Read one photo</AppText>
-              <Pressable
-                accessibilityRole="button"
-                disabled={busy}
-                onPress={() => {
-                  void ocrFrom('gallery');
-                }}
-                style={styles.actionRow}>
-                <View style={styles.actionIcon}>
-                  <Ionicons color={colors.primary[600]} name="images-outline" size={21} />
-                </View>
-                <View style={styles.copy}>
-                  <AppText variant="labelRegular">From gallery</AppText>
-                  <AppText variant="bodySmall">Choose a photo already on this phone</AppText>
-                </View>
-                <Ionicons color={colors.primary[500]} name="chevron-forward" size={20} />
-              </Pressable>
-              <View style={styles.hairline} />
-              <Pressable
-                accessibilityRole="button"
-                disabled={busy}
-                onPress={() => {
-                  void ocrFrom('camera');
-                }}
-                style={styles.actionRow}>
-                <View style={styles.actionIcon}>
-                  <Ionicons color={colors.primary[600]} name="camera-outline" size={21} />
-                </View>
-                <View style={styles.copy}>
-                  <AppText variant="labelRegular">From camera</AppText>
-                  <AppText variant="bodySmall">Take a photo and read the text here</AppText>
-                </View>
-                <Ionicons color={colors.primary[500]} name="chevron-forward" size={20} />
-              </Pressable>
-            </View>
             <AppText variant="bodySmall">
               Default is the Screenshots folder. You can add Camera or other albums. OCR stays on this phone. The
               assistant never looks at the photo — only the text you pass it.
@@ -324,25 +371,28 @@ export function Screenshots() {
               </Pressable>
             </View>
             <Pressable accessibilityRole="button" disabled={busy} onPress={() => void scan()} style={styles.primary}>
-              <Ionicons color="white" name="scan-outline" size={22} />
+              {activeAction === 'month' ? <LogoLoader /> : <Ionicons color="white" name="scan-outline" size={22} />}
               <AppText style={styles.white} variant="labelRegular">
-                {busy ? 'Scanning…' : 'Scan this month'}
+                {activeAction === 'month' ? 'Scanning…' : 'Scan this month'}
               </AppText>
             </Pressable>
-            {busy ? (
-              <ProgressMeter progress={progress} label={label || status} />
-            ) : (
+            {busy ? null : (
               <AppText accessibilityLiveRegion="polite" variant="bodySmall">
                 {status}
               </AppText>
             )}
           </View>
         }
-        contentContainerStyle={styles.list}
+        contentContainerStyle={[styles.list, busy ? styles.listBusy : undefined]}
         data={rows}
         keyExtractor={keyExtractor}
         renderItem={renderItem}
       />
+      {busy ? (
+        <View style={[styles.progressDock, { paddingBottom: Math.max(insets.bottom, spacing.md) }]}>
+          <ProgressMeter progress={progress} label={label || status} />
+        </View>
+      ) : null}
       <ScreenshotDetailSheet
         onClose={() => {
           useUiStore.getState().setSelectedScreenshotId(null);
@@ -395,7 +445,8 @@ export function Screenshots() {
             </Pressable>
           );
         })}
-        <Pressable accessibilityRole="button" onPress={() => void saveFolders()} style={styles.primary}>
+        <Pressable accessibilityRole="button" disabled={savingFolders} onPress={() => void saveFolders()} style={styles.primary}>
+          {savingFolders ? <LogoLoader /> : null}
           <AppText style={styles.white} variant="labelRegular">
             Save folders
           </AppText>
@@ -407,6 +458,19 @@ export function Screenshots() {
 
 const styles = StyleSheet.create({
   list: { gap: spacing.md, paddingBottom: spacing['2xl'] },
+  listBusy: { paddingBottom: 108 },
+  progressDock: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    backgroundColor: colors.neutral[0],
+    borderTopWidth: 1,
+    borderColor: colors.neutral[200],
+    boxShadow: '0px -4px 16px rgba(11,18,32,0.08)',
+  },
   header: { gap: spacing.md },
   row: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   copy: { flex: 1, gap: spacing.xs },
@@ -431,24 +495,40 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: spacing.sm,
   },
-  actionRow: {
-    minHeight: 48,
+  sourceOptions: {
+    flexDirection: 'column',
+    gap: spacing.sm,
+  },
+  sourceOption: {
+    minHeight: 80,
+    padding: spacing.md,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: colors.primary[500],
+    experimental_backgroundImage: gradients.languageCard,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
-    paddingVertical: spacing.sm,
+    gap: spacing.sm,
   },
-  actionIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 14,
+  sourceDisabled: {
+    opacity: 0.5,
+  },
+  sourceIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.primary[50],
+    backgroundColor: colors.neutral[0],
+    transform: [{ rotate: '-5deg' }],
   },
-  hairline: {
-    height: 1,
-    backgroundColor: colors.neutral[100],
+  sourceCopy: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  sourceCaption: {
+    color: colors.neutral[600],
   },
   folderRow: {
     minHeight: 48,

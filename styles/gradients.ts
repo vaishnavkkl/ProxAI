@@ -23,4 +23,10 @@ export const gradients = {
   statOut: 'linear-gradient(160deg, #EA580C 0%, #9A3412 46%, #431407 100%)',
   statNet: `linear-gradient(160deg, ${colors.primary[800]} 0%, #1E293B 52%, ${colors.primary[950]} 100%)`,
   action: `linear-gradient(145deg, ${colors.primary[500]} 0%, ${colors.primary[700]} 48%, ${colors.primary[800]} 100%), linear-gradient(145deg, rgba(255,255,255,0.22) 0%, rgba(255,255,255,0.04) 42%)`,
+  imagineStudio:
+    'radial-gradient(ellipse at 22% 18%, rgba(147,197,253,0.34) 0%, transparent 52%), radial-gradient(ellipse at 82% 78%, rgba(167,139,250,0.26) 0%, transparent 48%), linear-gradient(180deg, #1E293B 0%, #0B1220 100%)',
+  imagineShimmer:
+    'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.06) 32%, rgba(255,255,255,0.42) 50%, rgba(255,255,255,0.06) 68%, transparent 100%)',
+  languageCard: 'linear-gradient(120deg, #F8FAFC 0%, #EFF6FF 48%, #F8FAFC 100%)',
+  languageCardOn: 'linear-gradient(120deg, #EFF6FF 0%, #DBEAFE 46%, #EDE9FE 100%)',
 } as const;

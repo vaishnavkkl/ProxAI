@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 
 export type ToastKind = 'info' | 'success' | 'error';
-export type WorkKind = 'idle' | 'scan' | 'download';
+export type WorkKind = 'idle' | 'scan';
 
 export type Toast = {
   kind: ToastKind;
@@ -40,6 +40,8 @@ type UiState = {
   selectedScreenshotId: string | null;
   financeCategory: string | null;
   financeBankId: string | null;
+  homeBrief: string;
+  homeBriefHash: string;
   setProgress: (progress: number, label: string) => void;
   setProcessing: (isProcessing: boolean) => void;
   setWorkKind: (workKind: WorkKind) => void;
@@ -54,6 +56,7 @@ type UiState = {
   setSelectedScreenshotId: (selectedScreenshotId: string | null) => void;
   setFinanceCategory: (financeCategory: string | null) => void;
   setFinanceBankId: (financeBankId: string | null) => void;
+  setHomeBrief: (homeBrief: string, homeBriefHash: string) => void;
   clearMemory: () => void;
 };
 
@@ -101,6 +104,8 @@ export const useUiStore = create<UiState>((set) => ({
   selectedScreenshotId: null,
   financeCategory: null,
   financeBankId: null,
+  homeBrief: '',
+  homeBriefHash: '',
   setProgress: (llmProgress, llmLabel) => {
     const now = Date.now();
     if (now - lastProgressAt < 250 && llmProgress < 1 && llmProgress > 0) {
@@ -129,6 +134,7 @@ export const useUiStore = create<UiState>((set) => ({
   setSelectedScreenshotId: (selectedScreenshotId) => set({ selectedScreenshotId }),
   setFinanceCategory: (financeCategory) => set({ financeCategory }),
   setFinanceBankId: (financeBankId) => set({ financeBankId }),
+  setHomeBrief: (homeBrief, homeBriefHash) => set({ homeBrief, homeBriefHash }),
   clearMemory: () => {
     lastMemoryAt = 0;
     set({

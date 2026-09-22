@@ -1,24 +1,26 @@
-import Ionicons from '@expo/vector-icons/Ionicons';
-import { useRouter } from 'expo-router';
-import { useEffect, useState, type ReactNode } from 'react';
-import { AppState, FlatList, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { AppText } from '@/components/app-text';
 import { MessageCapture } from '@/components/message-capture';
 import { useCoachStore } from '@/store/coach-store';
-import { useLifeStore } from '@/store/life-store';
 import { useEventStore } from '@/store/event-store';
+import { useLifeStore } from '@/store/life-store';
 import { useSubscriptionStore } from '@/store/subscription-store';
 import { useUiStore } from '@/store/ui-store';
-import { borderRadius, colors, gradients, spacing } from '@/styles';
-import { relevantEvents } from '@/utils/relevant-events';
-import { confirmedRenewals } from '@/utils/renewals';
-import { agendaGroups, dailyDigest, dashboardHighlights, MODULES } from '@/utils/life-agenda';
-import { formatLedgerWhen } from '@/utils/format-when';
+import { borderRadius, colors, spacing } from '@/styles';
+import type { LedgerItem } from '@/types/ledger';
 import { formatCoachTime } from '@/utils/coach-pin';
 import { formatInr } from '@/utils/format-inr';
+import { formatLedgerWhen } from '@/utils/format-when';
+import { agendaGroups, dashboardHighlights, MODULES } from '@/utils/life-agenda';
 import { openCoach } from '@/utils/open-coach';
-import type { LedgerItem } from '@/types/ledger';
 import { regionalHolidays } from '@/utils/regional-holidays';
+import { relevantEvents } from '@/utils/relevant-events';
+import { confirmedRenewals } from '@/utils/renewals';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { useRouter } from 'expo-router';
+import { useEffect, useState, type ReactNode } from 'react';
+import { AppState, FlatList, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { AppPressable as Pressable } from '@/components/app-pressable';
+
 
 type AgendaEntry = { id: string; title: string; count: number } | { id: string; item: LedgerItem };
 
@@ -54,7 +56,7 @@ function renderEntry({ item }: { item: AgendaEntry }) {
 
 function entryKey(item: AgendaEntry) { return item.id; }
 
-export function LifeAgenda({ header, footer }: { header?: ReactNode; footer?: ReactNode }) {
+export function LifeAgenda({ footer }: { footer?: ReactNode }) {
   const router = useRouter();
   const life = useLifeStore((s) => s.items);
   const states = useLifeStore((s) => s.states);
@@ -92,7 +94,6 @@ export function LifeAgenda({ header, footer }: { header?: ReactNode; footer?: Re
   const groups = agendaGroups(filtered, states, now);
   const highlights = [...all.Important, ...all.Overdue.filter((item) => item.type !== 'bill' && item.type !== 'subscription'), ...all.Today, ...all.Tomorrow, ...all['Next 7 days']].filter((item) => item.type !== 'transaction');
   const focused = dashboardHighlights(all);
-  const reviewCount = all.Important.length + all.Overdue.filter((item) => item.type !== 'bill' && item.type !== 'subscription').length;
   const entries: AgendaEntry[] = browseAll ? Object.entries(groups).flatMap(([title, rows]) => {
     if ((!history && ['History', 'Completed'].includes(title)) || title === 'History' || (!rows.length && title !== 'Today')) return [];
     return [{ id: `section-${title}`, title, count: rows.length }, ...rows.map((item) => ({ id: item.id, item }))];
@@ -112,7 +113,6 @@ export function LifeAgenda({ header, footer }: { header?: ReactNode; footer?: Re
       showsVerticalScrollIndicator={false}
       contentContainerStyle={styles.listContent}
       ListHeaderComponent={<View style={styles.section}>
-      {header}
       <Pressable accessibilityRole="button" accessibilityLabel="Open image intelligence" onPress={() => router.push('/screenshots')} style={styles.screenshotFeature}>
         <View style={styles.screenshotIcon}><Ionicons name="scan" size={29} color={colors.primary[600]} /></View>
         <View style={styles.copy}><AppText variant="overline" style={styles.blue}>IMAGE INTELLIGENCE</AppText><AppText variant="h4">Saved it? We’ll remember.</AppText><AppText variant="bodySmall" style={styles.muted}>Read bills and bookings from screenshots, gallery, or camera</AppText></View>
@@ -120,7 +120,7 @@ export function LifeAgenda({ header, footer }: { header?: ReactNode; footer?: Re
       </Pressable>
       <Pressable accessibilityRole="button" accessibilityLabel="Open personal assistant" onPress={openCoach} style={styles.screenshotFeature}>
         <View style={styles.screenshotIcon}><Ionicons name="chatbubbles-outline" size={29} color={colors.primary[600]} /></View>
-        <View style={styles.copy}><AppText variant="overline" style={styles.blue}>PERSONAL ASSISTANT</AppText><AppText variant="h4">Ask about your day.</AppText><AppText variant="bodySmall" style={styles.muted}>Tasks, travel, deliveries, bills, and money — on this phone</AppText></View>
+        <View style={styles.copy}><AppText variant="overline" style={styles.blue}>PERSONAL ASSISTANT</AppText><AppText variant="h4">Ask about your day.</AppText><AppText variant="bodySmall" style={styles.muted}>Tasks, travel, deliveries, and bills — on this phone</AppText></View>
         <Ionicons name="arrow-forward" size={22} color={colors.primary[600]} />
       </Pressable>
       <Pressable accessibilityRole="button" accessibilityLabel="Open text to image" onPress={() => router.push('/imagine')} style={styles.screenshotFeature}>
@@ -128,21 +128,6 @@ export function LifeAgenda({ header, footer }: { header?: ReactNode; footer?: Re
         <View style={styles.copy}><AppText variant="overline" style={styles.blue}>TEXT TO IMAGE</AppText><AppText variant="h4">Describe it. Draw it here.</AppText><AppText variant="bodySmall" style={styles.muted}>SDXS 512 DreamShaper on this phone. Not an LLM. The chat model unloads first.</AppText></View>
         <Ionicons name="arrow-forward" size={22} color={colors.primary[600]} />
       </Pressable>
-      <View style={styles.digest}>
-        <View style={styles.heading}>
-          <Ionicons name="sparkles-outline" size={18} color={colors.primary[100]} />
-          <AppText variant="labelRegular" style={styles.onDigest}>Your day at a glance</AppText>
-        </View>
-        <AppText variant="h2" style={styles.onDigest}>{reviewCount ? `${reviewCount} ${reviewCount === 1 ? "item" : "items"} to review` : highlights.length ? 'Your next plans, together' : 'You’re all caught up'}</AppText>
-        <AppText variant="bodySmall" style={styles.digestMuted}>{all.Today.some((item) => item.type !== 'transaction') ? `Today: ${dailyDigest(all.Today.filter((item) => item.type !== 'transaction'))}` : 'Nothing scheduled for today. Check your upcoming plans below.'}</AppText>
-        <View style={styles.briefStats}>
-          {[
-            { label: 'Today', count: all.Today.filter((item) => item.type !== 'transaction').length },
-            { label: 'This week', count: [...all.Tomorrow, ...all['Next 7 days']].filter((item) => item.type !== 'transaction').length },
-            { label: 'To review', count: reviewCount },
-          ].map((stat) => <View key={stat.label} style={styles.briefStat}><AppText variant="h3" style={styles.onDigest}>{stat.count}</AppText><AppText variant="caption" style={styles.digestMuted}>{stat.label}</AppText></View>)}
-        </View>
-      </View>
       <View style={styles.viewTabs}>
         <Pressable accessibilityRole="button" accessibilityState={{ selected: !browseAll }} onPress={() => { setBrowseAll(false); setSearchOpen(false); setSearch(''); }} style={[styles.viewTab, !browseAll && styles.viewTabOn]}><AppText variant="labelSmall" style={!browseAll ? styles.blue : styles.muted}>Highlights</AppText></Pressable>
         <Pressable accessibilityRole="button" accessibilityState={{ selected: browseAll }} onPress={() => setBrowseAll(true)} style={[styles.viewTab, browseAll && styles.viewTabOn]}><AppText variant="labelSmall" style={browseAll ? styles.blue : styles.muted}>Your plans</AppText></Pressable>
@@ -203,8 +188,6 @@ export function LifeAgenda({ header, footer }: { header?: ReactNode; footer?: Re
 const styles = StyleSheet.create({
   screenshotFeature: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.lg, borderRadius: 24, borderWidth: 1, borderColor: colors.primary[100], experimental_backgroundImage: 'linear-gradient(120deg, #EFF6FF, #DBEAFE, #F8FAFC)' },
   screenshotIcon: { width: 50, height: 56, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.neutral[0], transform: [{ rotate: '-5deg' }] },
-  briefStats: { flexDirection: 'row', paddingTop: spacing.md, marginTop: spacing.xs, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.2)' },
-  briefStat: { flex: 1, gap: spacing.xs },
   viewTabs: { flexDirection: 'row', padding: spacing.xs, borderRadius: borderRadius.lg, backgroundColor: colors.neutral[200] },
   viewTab: { flex: 1, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: borderRadius.md },
   viewTabOn: { backgroundColor: colors.neutral[0], boxShadow: '0px 2px 4px rgba(0,0,0,0.06)' },
@@ -220,9 +203,7 @@ const styles = StyleSheet.create({
   blue: { color: colors.primary[600] },
   count: { color: colors.neutral[600], backgroundColor: colors.neutral[100], paddingHorizontal: spacing.sm, borderRadius: borderRadius.full },
   add: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: spacing.xs, paddingHorizontal: spacing.md, backgroundColor: colors.primary[50], borderRadius: borderRadius.full },
-  digest: { backgroundColor: colors.primary[800], experimental_backgroundImage: gradients.hero, boxShadow: '0px 6px 16px rgba(30,58,138,0.16)', padding: spacing.xl, borderRadius: borderRadius.xl, gap: spacing.sm },
   onDigest: { color: colors.neutral[0] },
-  digestMuted: { color: colors.primary[100] },
   modules: { gap: spacing.sm, paddingRight: spacing.lg },
   chip: { minHeight: 48, justifyContent: 'center', paddingHorizontal: spacing.lg, borderRadius: borderRadius.full, backgroundColor: colors.neutral[100] },
   selectedChip: { minHeight: 48, justifyContent: 'center', paddingHorizontal: spacing.lg, borderRadius: borderRadius.full, backgroundColor: colors.primary[600] },

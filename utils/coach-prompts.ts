@@ -1,5 +1,4 @@
 import type { SpendPlan } from '@/utils/spend-coach';
-import { formatInr } from '@/utils/format-inr';
 
 export type CoachTopic =
   | 'start'
@@ -19,6 +18,14 @@ export type CoachTopic =
 
 export function detectCoachTopic(text: string): CoachTopic {
   const question = text.toLowerCase();
+  // Match Malayalam topics before clipping the snapshot, so long finance rows
+  // cannot hide the user's tasks or travel when they ask in Malayalam.
+  if (/ഇന്നത്തെ (പരിപാടി|പദ്ധതി|കാര്യ)|ഇന്ന് എന്തൊക്കെ|അജണ്ട/.test(question)) return 'today';
+  if (/ചെയ്യേണ്ട|ചെയ്യാനുള്ള|ടാസ്ക്/.test(question)) return 'tasks';
+  if (/യാത്ര|ട്രെയിൻ|വിമാനം|ടിക്കറ്റ്|ഹോട്ടൽ/.test(question)) return 'travel';
+  if (/പാർസൽ|ഡെലിവറി|കൊറിയർ/.test(question)) return 'delivery';
+  if (/തട്ടിപ്പ്|സുരക്ഷ|ഫിഷിംഗ്/.test(question)) return 'security';
+  if (/ബില്ല്|ബിൽ|വാടക|സബ്സ്ക്രിപ്ഷൻ/.test(question)) return 'bills';
   if (/\b(agenda|what('s| is) on|my day|today('s)? (plan|task|event|list))\b/.test(question)) {
     return 'today';
   }
@@ -61,6 +68,17 @@ export function detectCoachTopic(text: string): CoachTopic {
   return 'start';
 }
 
+const LIFE_TOPICS = new Set<CoachTopic>(['today', 'tasks', 'travel', 'delivery', 'security', 'bills']);
+
+/** Only attach saved plans when the question is about this person's day — never money. */
+export function questionNeedsUserData(text: string): boolean {
+  if (LIFE_TOPICS.has(detectCoachTopic(text))) {
+    return true;
+  }
+  const question = text.toLowerCase();
+  return /\b(my (day|tasks?|plans?|agenda)|what do i have coming)\b/.test(question);
+}
+
 function uniquePrompts(prompts: string[], hide: string | null): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
@@ -77,13 +95,12 @@ function uniquePrompts(prompts: string[], hide: string | null): string[] {
   return out;
 }
 
-export function nextCoachPrompts(lastUser: string | null, plan: SpendPlan): string[] {
-  const top = plan.topCategory;
+export function nextCoachPrompts(lastUser: string | null, _plan: SpendPlan): string[] {
   const start = [
     'What is on my agenda today?',
     'What tasks still need me?',
     'Any travel or deliveries coming up?',
-    'How does my income compare to spending?',
+    'Which bills are due soon?',
   ];
 
   if (!lastUser) {
@@ -97,7 +114,7 @@ export function nextCoachPrompts(lastUser: string | null, plan: SpendPlan): stri
       'What tasks still need me?',
       'Any travel or deliveries coming up?',
       'Which bills are due soon?',
-      'How much can I spend each day?',
+      'Remind me about upcoming events',
     ],
     tasks: [
       'What is overdue?',
@@ -108,7 +125,7 @@ export function nextCoachPrompts(lastUser: string | null, plan: SpendPlan): stri
     travel: [
       'What is on my agenda today?',
       'Any packages on the way?',
-      `I have ${formatInr(plan.remaining)} left — can I afford a weekend trip?`,
+      'What tasks still need me?',
       'Which bills are due soon?',
     ],
     delivery: [
@@ -121,56 +138,21 @@ export function nextCoachPrompts(lastUser: string | null, plan: SpendPlan): stri
       'What should I do about a suspicious message?',
       'What is on my agenda today?',
       'Which bills are due soon?',
-      'How does my income compare to spending?',
+      'What tasks still need me?',
     ],
-    compare: [
-      `How do I keep ${formatInr(plan.remaining)} leftover?`,
-      `How do I reach ${formatInr(plan.saveMonthly)} saved?`,
-      top ? `Should I cut ${top} first?` : 'Where should I cut first?',
-      'What is left after my bills?',
-    ],
-    spend: [
-      `Can I still spend ${formatInr(plan.daily)} a day?`,
-      top ? `How do I cut ${top}?` : 'Where should I cut first?',
-      `How do I reach ${formatInr(plan.saveMonthly)} saved?`,
-      'What is left after my bills?',
-    ],
-    daily: [
-      "Am I over today's safe cap already?",
-      'What if I spend nothing for 3 days?',
-      top ? `Does ${top} blow the daily cap?` : 'Which category blows the daily cap?',
-      `How much is left of ${formatInr(plan.remaining)}?`,
-    ],
-    save: [
-      'What one spend should I skip this week?',
-      top ? `If I halve ${top}, how much do I save?` : 'Which category funds the save target?',
-      'Should I pay an EMI early or save first?',
-      `Is ${formatInr(plan.saveMonthly)} realistic this month?`,
-    ],
-    cut: [
-      'Which merchant should I pause?',
-      `How much daily spend stays after the cut?`,
-      'Can I still hit the save target?',
-      'Compare grocery vs dining this month',
-    ],
-    income: [
-      'How much of my paycheck is already spent?',
-      'What is left after bills and EMI?',
-      `How much can I spend each day?`,
-      'How much should I save from this paycheck?',
-    ],
+    compare: start,
+    spend: start,
+    daily: start,
+    save: start,
+    cut: start,
+    income: start,
     bills: [
-      'Which bill is eating the paycheck?',
-      'Are my subscriptions worth keeping?',
-      'What leftover remains after fixed bills?',
-      'Should I pause a subscription this month?',
+      'Which bills are due soon?',
+      'What is on my agenda today?',
+      'What tasks still need me?',
+      'Any travel or deliveries coming up?',
     ],
-    afford: [
-      `I have ${formatInr(plan.remaining)} left — can I afford a weekend trip?`,
-      'What should I cut to free ₹2,000?',
-      'Will a big purchase break the daily cap?',
-      'How does that change my save target?',
-    ],
+    afford: start,
   };
 
   return uniquePrompts([...follow[topic], ...start], lastUser);
@@ -181,4 +163,44 @@ export function clipCoachSnapshot(text: string, max = 1400) {
     return text;
   }
   return `${text.slice(0, max).trim()}\n[truncated]`;
+}
+
+/** Keep task/travel facts from being crowded out by long transaction lists. */
+export function selectCoachSnapshot(text: string, question: string, max = 1400): string {
+  if (!questionNeedsUserData(question)) {
+    return '';
+  }
+  const topic = detectCoachTopic(question);
+  const sectionPatterns: Partial<Record<CoachTopic, RegExp>> = {
+    today: /^(Upcoming events|Tasks|Travel|Deliveries|Due bills|Other plans):/i,
+    tasks: /^(Tasks|Other plans):/i,
+    travel: /^(Travel|Upcoming events):/i,
+    delivery: /^Deliveries:/i,
+    security: /^Security to review:/i,
+    bills: /^Due bills:/i,
+  };
+  const pattern = sectionPatterns[topic];
+  if (!pattern) return clipCoachSnapshot(text, max);
+  const lines = text.split('\n');
+  const relevant = lines.filter((line) => pattern.test(line));
+  const context = lines.filter((line) => /^(Month|Today):/i.test(line));
+  if (relevant.length === 0) {
+    return [...context, 'No saved details for this topic in the current snapshot.'].join('\n');
+  }
+  // Share the budget between relevant sections so one long line cannot hide
+  // every other type of plan. Leave room for labels and truncation indicators.
+  const available = Math.max(0, max - context.join('\n').length - context.length);
+  const perLine = Math.max(1, Math.floor(available / relevant.length) - 1);
+  return [...context, ...relevant.map((line) => line.length <= perLine
+    ? line : clipCoachSnapshot(line, Math.max(0, perLine - 13)))].join('\n');
+}
+
+/** Conservative input byte allowance plus the 256-token reply and framing. */
+export function coachContextReserve(input: string): number {
+  let bytes = 0;
+  for (const char of input) {
+    const code = char.codePointAt(0)!;
+    bytes += code <= 0x7f ? 1 : code <= 0x7ff ? 2 : code <= 0xffff ? 3 : 4;
+  }
+  return Math.max(512, bytes + 320);
 }

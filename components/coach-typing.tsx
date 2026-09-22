@@ -1,5 +1,6 @@
-import { useEffect, useRef } from 'react';
-import { Animated, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { LogoLoader as ActivityIndicator } from '@/components/logo-loader';
+
 
 import { AppText } from '@/components/app-text';
 import { borderRadius, colors, spacing } from '@/styles';
@@ -9,30 +10,11 @@ type CoachTypingProps = {
 };
 
 export function CoachTyping({ label }: CoachTypingProps) {
-  const pulse = useRef(new Animated.Value(0.35)).current;
-
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulse, { toValue: 1, duration: 420, useNativeDriver: true }),
-        Animated.timing(pulse, { toValue: 0.35, duration: 420, useNativeDriver: true }),
-      ]),
-    );
-    loop.start();
-    return () => {
-      loop.stop();
-    };
-  }, [pulse]);
-
   return (
-    <View style={styles.wrap}>
-      <View style={styles.dots}>
-        <Animated.View style={[styles.dot, { opacity: pulse }]} />
-        <Animated.View style={[styles.dot, styles.dotMid, { opacity: pulse }]} />
-        <Animated.View style={[styles.dot, { opacity: pulse }]} />
-      </View>
+    <View accessibilityLiveRegion="polite" accessibilityLabel={label || 'Preparing response'} style={styles.wrap}>
+      <ActivityIndicator size="small" style={styles.spinner} />
       <AppText style={styles.label} variant="caption">
-        {label || 'Writing a review…'}
+        {label || 'Preparing response…'}
       </AppText>
     </View>
   );
@@ -54,6 +36,9 @@ const styles = StyleSheet.create({
   dots: {
     flexDirection: 'row',
     gap: spacing.xs,
+  },
+  spinner: {
+    alignSelf: 'flex-start',
   },
   dot: {
     width: 8,

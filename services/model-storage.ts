@@ -80,14 +80,10 @@ export function findCachedFile(remoteUrl: string): string | null {
       if (!directory.exists) {
         continue;
       }
-      for (const entry of directory.list()) {
-        if (!(entry instanceof File)) {
-          continue;
-        }
-        // tokenizer.json is shared as a basename by unrelated models. Match the full URL key.
-        if (entry.name === expected && entry.size > 0) {
-          return toFileUri(entry.uri);
-        }
+      // Check the exact URL-keyed file instead of enumerating the whole cache.
+      const entry = new File(directory, expected);
+      if (entry.exists && entry.size > 0) {
+        return toFileUri(entry.uri);
       }
     }
   } catch {
@@ -230,6 +226,47 @@ export async function cacheTokenizerSources(sources: ModelSources): Promise<Mode
 
 export function countPteFiles(): number {
   return getModelStorageInfo().files.filter((file) => file.name.endsWith('.pte')).length;
+}
+
+export function cacheNamesForSources(sources: ModelSources): string[] {
+  return [sources.model, sources.tokenizer, sources.tokenizerConfig].map(cacheNameFromUrl);
+}
+
+export function removeCachedModelSources(sources: ModelSources | null): number {
+  if (!sources) {
+    return 0;
+  }
+  return removeNamedCacheFiles(cacheNamesForSources(sources));
+}
+
+export function listRemovableLanguageModels(custom: {
+  customModelUrl: string;
+  customTokenizerUrl: string;
+  customTokenizerConfigUrl: string;
+}): { id: CatalogModel['id']; label: string }[] {
+  const seen = new Set<string>();
+  const unique: { id: CatalogModel['id']; label: string }[] = [];
+  for (const item of listOnDeviceCatalog(custom)) {
+    if (item.id === 'custom') {
+      continue;
+    }
+    const sources = resolveModelSources({
+      modelId: item.id,
+      customModelUrl: custom.customModelUrl,
+      customTokenizerUrl: custom.customTokenizerUrl,
+      customTokenizerConfigUrl: custom.customTokenizerConfigUrl,
+    });
+    if (!sources) {
+      continue;
+    }
+    const key = cacheNameFromUrl(sources.model);
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    unique.push({ id: item.id, label: item.label });
+  }
+  return unique;
 }
 
 export function removeNamedCacheFiles(names: string[]): number {

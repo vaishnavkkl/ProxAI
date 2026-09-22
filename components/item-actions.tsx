@@ -1,5 +1,7 @@
 import { useState } from 'react';
-import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { StyleSheet, TextInput, View } from 'react-native';
+import { AppPressable as Pressable } from '@/components/app-pressable';
+
 import { AppText } from '@/components/app-text';
 import { DateTimeField } from '@/components/date-time-field';
 import { useLifeStore } from '@/store/life-store';
@@ -29,7 +31,7 @@ export function ItemActions({ item }: { item: LedgerItem }) {
     if (!item.date) { setMessage('Save a date first to create a reminder.'); return; }
     if (process.env.EXPO_OS === 'web') { setMessage('Calendar reminders are available in the Android or iOS app.'); return; }
     await run(async () => {
-      const Calendar = await import('expo-calendar');
+      const Calendar = await import('expo-calendar/legacy');
       const start = parseLocalDate(item.date!);
       const end = new Date(start);
       if (item.date!.length === 10) end.setDate(start.getDate() + 1);

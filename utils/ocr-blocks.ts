@@ -51,10 +51,14 @@ export function selectedOcrText(blocks: OcrBlock[], selected: Record<string, boo
     .trim();
 }
 
-export function ocrCoachQuestion(instruction: string, excerpt: string): string {
-  const task = instruction.trim() || 'Rephrase this';
+export function ocrCoachQuestion(instruction: string, excerpt: string, language: 'en' | 'ml' = 'en'): string {
+  const task = instruction.trim();
   const body = excerpt.replace(/\s+/g, ' ').trim().slice(0, 900);
-  return `${task}. Work only from this OCR text; there is no image.\n\n${body}`;
+  const locale = language === 'ml' ? ' Reply in Malayalam script.' : '';
+  const lead = task
+    ? `${task}. Work only from this OCR text; there is no image.`
+    : 'Work only from this OCR text; there is no image.';
+  return `${lead}${locale}\n\n${body}`;
 }
 
 export function isScreenshotAlbum(name: string): boolean {

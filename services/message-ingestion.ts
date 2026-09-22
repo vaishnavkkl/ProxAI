@@ -94,6 +94,9 @@ export async function ingestMessagePage(messages: IncomingMessage[], modelKey: s
         const message = error instanceof Error ? error.message : '';
         // Known setup failures apply to every batch. Keep all remaining messages
         // pending, without repeatedly trying to load a model that cannot run.
+        if (message.startsWith('Process terminated') || message.startsWith('The previous model process')) {
+          throw error;
+        }
         if (message.startsWith('Not enough free memory')) {
           failureReason = 'Not enough free memory for the selected model. Choose Qwen2.5 0.5B in Settings, then Refresh. Your saved items are kept.';
           break;

@@ -1,5 +1,6 @@
 import { PermissionsAndroid, Platform } from 'react-native';
 import { getDb, getScanMeta, persistParsedBatch, setScanMeta } from '@/services/database';
+import { isModelTimeout } from '@/services/model-deadline';
 import { readExtraction, writeExtraction } from '@/services/extraction-cache';
 import { getFinlifeNative } from '@/services/finlife-native';
 import { ingestMessagePage } from '@/services/message-ingestion';
@@ -17,11 +18,11 @@ import type { ParsedItem } from '@/types/llm-output';
 import { extractScreenshotResult } from '@/utils/screenshot-extraction';
 import { isUpcomingPlan } from '@/utils/information';
 import { splitForLlm } from '@/utils/message-filter';
+import { ocrVersion, recognizeImageText } from '@/services/screenshot-ocr';
 
-export type ScreenshotScan = NativeScreenshot & { hash: string; text: string; itemIds: string[]; parser: string };
+export type ScreenshotScan = NativeScreenshot & { hash: string; text: string; itemIds: string[]; parser: string; ocrVersion?: string };
 export type ScreenshotAccess = 'full' | 'limited' | 'denied' | 'unavailable';
 type Infer = (messages: IncomingMessage[]) => Promise<ParsedItem[]>;
-const OCR_VERSION = 'mlkit-latin-16.0.1-4096-v1';
 let running = false;
 
 type ShotWork = {
@@ -121,6 +122,8 @@ export async function scanScreenshots(month = new Date(), onProgress: (label: st
     const since = new Date(month.getFullYear(), month.getMonth(), 1).getTime();
     const until = Math.min(Date.now() + 1, new Date(month.getFullYear(), month.getMonth() + 1, 1).getTime());
     const modelKey = JSON.stringify(resolveModelSources(useSettingsStore.getState()));
+    const language = useSettingsStore.getState().ocrLanguage;
+    const version = ocrVersion(language);
     const folders = await getImageScanFolders();
     let after = 0, read = 0, cached = 0, added = 0, errors = 0, model = 0;
     while (true) {
@@ -135,13 +138,14 @@ export async function scanScreenshots(month = new Date(), onProgress: (label: st
         try {
           const previous = await db.getFirstAsync<{ payload: string }>('SELECT payload FROM screenshot_scans WHERE asset_id = ?', [asset.id]);
           const saved = previous ? JSON.parse(previous.payload) as ScreenshotScan : null;
-          if (saved?.revision === asset.revision && saved.parser === PARSER_VERSION && typeof saved.text === 'string') { cached++; continue; }
+          if (saved?.revision === asset.revision && saved.parser === PARSER_VERSION &&
+              (saved.ocrVersion ?? ocrVersion('en')) === version && typeof saved.text === 'string') { cached++; continue; }
           const hash = await native.getScreenshotHash!(asset.uri);
-          const key = `ocr:${OCR_VERSION}:${hash}`;
+          const key = `ocr:${version}:${hash}`;
           let ocr = await readExtraction<{ text: string; capturedAt: number }>(key);
           if (!ocr) {
             onProgress(`Reading image ${read} on this phone`);
-            ocr = { text: await native.recognizeScreenshot!(asset.uri), capturedAt: asset.capturedAt };
+            ocr = { text: await recognizeImageText(asset.uri, language), capturedAt: asset.capturedAt };
             await writeExtraction(key, ocr);
           } else cached++;
           const extracted = extractScreenshotResult({ ...asset, capturedAt: ocr.capturedAt }, hash, ocr.text);
@@ -154,7 +158,8 @@ export async function scanScreenshots(month = new Date(), onProgress: (label: st
             saved,
             classified: extracted.items.length > 0,
           });
-        } catch {
+        } catch (error) {
+          if (isModelTimeout(error)) throw error;
           // Never cache failure as an empty result: inaccessible/corrupt images retry next scan.
           errors++;
         }
@@ -173,7 +178,7 @@ export async function scanScreenshots(month = new Date(), onProgress: (label: st
         const stores = [useTransactionStore.getState(), useEventStore.getState(), useSubscriptionStore.getState(), useLifeStore.getState()];
         if (work.regexItems.length) await persistParsedBatch({ items: work.regexItems, processed: [] });
         const corrected = (work.saved?.itemIds ?? []).filter((id) => !items.some((item) => item.id === id) && useLifeStore.getState().states[id]);
-        const record: ScreenshotScan = { ...work.asset, hash: work.hash, text: work.text, itemIds: [...items.map((item) => item.id), ...corrected], parser: PARSER_VERSION };
+        const record: ScreenshotScan = { ...work.asset, hash: work.hash, text: work.text, itemIds: [...items.map((item) => item.id), ...corrected], parser: PARSER_VERSION, ocrVersion: version };
         await db.runAsync('INSERT OR REPLACE INTO screenshot_scans (asset_id, captured_at, payload) VALUES (?, ?, ?)', [work.asset.id, work.asset.capturedAt, JSON.stringify(record)]);
         for (const state of stores) state.addMany(items);
         added += items.filter((item) => !knownBefore.has(item.id)).length;

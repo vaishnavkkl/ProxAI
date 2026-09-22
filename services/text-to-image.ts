@@ -1,23 +1,26 @@
 import { Directory, File, Paths } from 'expo-file-system';
 
-import { canUseNativeLlm } from '@/utils/app-runtime';
 import { finishDownloadNotice, reportDownloadNotice } from '@/services/download-notice';
-import { exclusiveInference, occupyInference, releaseInference } from '@/services/inference-slot';
+import { occupyInference, releaseInference } from '@/services/inference-slot';
+import { isModelTaskDraining, MODEL_DRAINING_MESSAGE, runModelTask } from '@/services/model-deadline';
+import { getLlmRuntime } from '@/services/llm-runtime';
 import type { ProgressFn } from '@/services/llm-runtime-types';
-import { releaseLlmSlot } from '@/services/llm-service';
-import { listCachedFileMap, unlinkNamedCacheFiles } from '@/services/model-storage';
+import { downloadModelResources } from '@/services/model-download';
+import { findCachedFile, listCachedFileMap, unlinkNamedCacheFiles } from '@/services/model-storage';
 import {
-  DEFAULT_TTI_VARIANT,
-  getTtiVariant,
-  cacheFileNameFromUrl,
-  isCachedTti,
-  ttiCacheNames,
-  ttiSourcesFor,
-  ttiVariantSupported,
-  type TtiVariantId,
+    cacheFileNameFromUrl,
+    DEFAULT_TTI_VARIANT,
+    getTtiVariant,
+    isCachedTti,
+    ttiCacheNames,
+    ttiSourcesFor,
+    ttiVariantSupported,
+    type TtiVariantId,
 } from '@/services/text-to-image-catalog';
 import { markVisionLoaded, registerVisionUnload } from '@/services/vision-slot';
+import { beginModelDownload } from '@/store/model-download-store';
 import { useUiStore } from '@/store/ui-store';
+import { canUseNativeLlm } from '@/utils/app-runtime';
 import { transferLabel } from '@/utils/format-bytes';
 import { encodeRgbaPng } from '@/utils/rgba-png';
 
@@ -39,7 +42,6 @@ let registered = false;
 let cancelled = false;
 let downloadAbort: AbortController | null = null;
 let imagineViews = 0;
-let ownedDownloadUi = false;
 
 function ensureRegistered() {
   if (registered) {
@@ -72,7 +74,6 @@ function isUserCancelError(error: unknown) {
 function emitTransfer(name: string, ratio: number, received: number, total: number, onProgress: ProgressFn) {
   const label = transferLabel(name, received, total, ratio);
   onProgress(ratio, label);
-  useUiStore.getState().setProgress(ratio, label);
   void reportDownloadNotice(ratio, label);
 }
 
@@ -81,26 +82,8 @@ function setBusy(value: boolean) {
   useUiStore.getState().setImageBusy(value);
 }
 
-function beginDownloadUi() {
-  const ui = useUiStore.getState();
-  if (!ui.isProcessing) {
-    ui.setWorkKind('download');
-    ui.setProcessing(true);
-    ownedDownloadUi = true;
-  }
-}
-
-function endDownloadUi() {
-  if (!ownedDownloadUi) {
-    return;
-  }
-  ownedDownloadUi = false;
-  useUiStore.getState().setProcessing(false);
-  useUiStore.getState().setProgress(0, '');
-}
-
 function releaseImagineIfIdle() {
-  if (imagineViews === 0 && !generating && !downloadAbort) {
+  if (imagineViews === 0 && !generating) {
     void disposeTextToImage();
   }
 }
@@ -109,9 +92,23 @@ export function attachImagine() {
   imagineViews += 1;
 }
 
+export function unloadImaginePipeline() {
+  if (imagineViews > 0) {
+    return;
+  }
+  if (generating) {
+    cancelled = true;
+  }
+  void disposeTextToImage().catch(() => undefined);
+}
+
 export function detachImagine() {
   imagineViews = Math.max(0, imagineViews - 1);
-  releaseImagineIfIdle();
+  if (imagineViews > 0) {
+    return;
+  }
+  // A file download can finish on disk. The SDXS pipeline does not stay in RAM.
+  unloadImaginePipeline();
 }
 
 function throwIfStopped() {
@@ -158,6 +155,7 @@ async function deletePipeline(current: SdxsRunner) {
 }
 
 export async function disposeTextToImage() {
+  if (generating) throw new Error('The image model is still stopping. Please try again shortly.');
   const current = moduleInstance;
   const variant = loadedVariant;
   moduleInstance = null;
@@ -210,28 +208,33 @@ async function downloadUnlocked(id: TtiVariantId, onProgress: ProgressFn) {
     return;
   }
   throwIfStopped();
-  const { download } = nativeApi();
-  beginDownloadUi();
   const total = variant.downloadBytes;
-  emitTransfer(name, 0.04, 0, total, onProgress);
   const controller = new AbortController();
+  const task = beginModelDownload('image', `Downloading ${name}…`, () => controller.abort());
   downloadAbort = controller;
+  const report: ProgressFn = (progress, label) => { task.update(progress, label); onProgress(progress, label); };
+  let lastProgressAt = 0;
   try {
-    await download(sources, {
+    emitTransfer(name, 0, 0, total, report);
+    await downloadModelResources(sources, {
       signal: controller.signal,
       onProgress: (progress) => {
-        if (cancelled) {
+        if (cancelled || controller.signal.aborted) {
           return;
         }
-        const ratio = Math.max(0.04, Math.min(1, progress));
-        emitTransfer(name, ratio, Math.round(ratio * total), total, onProgress);
+        const now = Date.now();
+        if (progress < 1 && now - lastProgressAt < 150) return;
+        lastProgressAt = now;
+        const ratio = Math.max(0, Math.min(1, progress));
+        emitTransfer(name, ratio, Math.round(ratio * total), total, report);
       },
     });
+    if (controller.signal.aborted) throw stoppedError();
     throwIfStopped();
-    emitTransfer(name, 1, total, total, onProgress);
+    emitTransfer(name, 1, total, total, report);
     void finishDownloadNotice(true, `${name} is saved on this phone.`);
   } catch (error) {
-    const stopped = cancelled || isUserCancelError(error);
+    const stopped = cancelled || controller.signal.aborted || isUserCancelError(error);
     void finishDownloadNotice(false, stopped ? 'Image model download stopped.' : 'Image model download did not finish.');
     if (stopped) {
       throw stoppedError();
@@ -239,11 +242,12 @@ async function downloadUnlocked(id: TtiVariantId, onProgress: ProgressFn) {
     throw error;
   } finally {
     downloadAbort = null;
-    endDownloadUi();
+    task.finish();
   }
 }
 
 export async function downloadTextToImage(id: TtiVariantId, onProgress: ProgressFn) {
+  if (isModelTaskDraining()) throw new Error(MODEL_DRAINING_MESSAGE);
   ensureRegistered();
   if (!isTextToImageAvailable()) {
     throw new Error('unavailable');
@@ -251,19 +255,10 @@ export async function downloadTextToImage(id: TtiVariantId, onProgress: Progress
   if (!ttiVariantSupported(id)) {
     throw new Error('This image model is not available on this phone.');
   }
-  return exclusiveInference(async () => {
-    if (generating) {
-      throw new Error('An image is already being generated.');
-    }
-    cancelled = false;
-    setBusy(true);
-    try {
-      await downloadUnlocked(id, onProgress);
-    } finally {
-      setBusy(false);
-      releaseImagineIfIdle();
-    }
-  });
+  if (generating || downloadAbort) throw new Error('An image operation is already running.');
+  cancelled = false;
+  // A file transfer does not own native model memory or the inference queue.
+  await downloadUnlocked(id, onProgress);
 }
 
 function cacheNamesToRemove(id: TtiVariantId) {
@@ -309,12 +304,18 @@ async function loadPipeline(id: TtiVariantId, onProgress: ProgressFn) {
   }
   throwIfStopped();
   occupyInference('tti');
-  const { createSdxsTextToImage, download } = nativeApi();
+  const { createSdxsTextToImage } = nativeApi();
   const variant = getTtiVariant(id);
   const sources = ttiSourcesFor(id);
   onProgress(0.22, `Loading ${variant.modelName} ${variant.label} on this phone…`);
   try {
-    const local = await download(sources);
+    const modelPath = findCachedFile(sources.modelPath);
+    const tokenizerPath = findCachedFile(sources.tokenizerPath);
+    if (!modelPath || !tokenizerPath) throw new Error('Download the image model first.');
+    const local = {
+      modelPath: decodeURI(modelPath.replace(/^file:\/\//, '')),
+      tokenizerPath: decodeURI(tokenizerPath.replace(/^file:\/\//, '')),
+    };
     throwIfStopped();
     const loaded = await createSdxsTextToImage(local);
     if (cancelled) {
@@ -349,6 +350,7 @@ export async function generateTextToImage(
   seed: number | undefined,
   onProgress: ProgressFn,
 ) {
+  if (isModelTaskDraining()) throw new Error(MODEL_DRAINING_MESSAGE);
   ensureRegistered();
   const trimmed = prompt.trim();
   if (!trimmed) {
@@ -361,18 +363,19 @@ export async function generateTextToImage(
     throw new Error('This image model is not available on this phone.');
   }
 
-  return exclusiveInference(async () => {
+  if (downloadAbort || generating) throw new Error('An image operation is already running.');
+  cancelled = false;
+  if (!hasCachedTextToImage(id)) await downloadUnlocked(id, onProgress);
+  throwIfStopped();
+  return runModelTask(async () => {
     if (generating) {
       throw new Error('An image is already being generated.');
     }
-    cancelled = false;
+    throwIfStopped();
     setBusy(true);
     try {
-      if (!hasCachedTextToImage(id)) {
-        await downloadUnlocked(id, onProgress);
-      }
       throwIfStopped();
-      await releaseLlmSlot();
+      await getLlmRuntime().releaseLlmSlot();
       throwIfStopped();
       const variant = getTtiVariant(id);
       const pipeline = await loadPipeline(id, onProgress);
@@ -399,7 +402,12 @@ export async function generateTextToImage(
       }
       releaseImagineIfIdle();
     }
-  });
+  }, () => {
+    cancelled = true;
+    // SDXS has no native interrupt API. Discard its result and dispose only
+    // after generate settles; freeing a pipeline in flight can crash the app.
+    useUiStore.getState().setImageBusy(false);
+  }, () => disposeTextToImage());
 }
 
 ensureRegistered();
