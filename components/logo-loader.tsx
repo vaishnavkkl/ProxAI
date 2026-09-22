@@ -1,22 +1,41 @@
 import { useEffect } from 'react';
-import { Animated, Easing, type StyleProp, type ViewStyle, useAnimatedValue } from 'react-native';
+import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import Animated, {
+  cancelAnimation, Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withRepeat, withTiming,
+} from 'react-native-reanimated';
 
-/** Small decoded asset; animation stays on the native thread while models work. */
-export function LogoLoader({ size = 'small', style }: {
+/** The same counter-rotating brand rings at every loading size. */
+export function LogoLoader({ size = 'small', style, color }: {
   size?: 'small' | 'large' | number; style?: StyleProp<ViewStyle>; color?: string;
 }) {
-  const rotation = useAnimatedValue(0);
+  const turn = useSharedValue(0);
+  const reducedMotion = useReducedMotion();
   const pixels = typeof size === 'number' ? size : size === 'large' ? 48 : 24;
+  const ringSize = pixels * 184 / 264;
+
   useEffect(() => {
-    const animation = Animated.loop(Animated.timing(rotation, {
-      toValue: 1, duration: 1400, easing: Easing.linear, useNativeDriver: true, isInteraction: false,
-    }));
-    animation.start();
-    return () => animation.stop();
-  }, [rotation]);
-  return <Animated.View accessibilityRole="progressbar" accessibilityLabel="Loading" style={style}>
-    <Animated.Image source={require('@/assets/images/logo-loading.png')} resizeMode="contain"
-      style={{ width: pixels, height: pixels, borderRadius: pixels / 2,
-        transform: [{ rotate: rotation.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] }) }] }} />
-  </Animated.View>;
+    turn.value = 0;
+    if (!reducedMotion) {
+      turn.value = withRepeat(withTiming(1, { duration: 2250, easing: Easing.linear }), -1, false);
+    }
+    return () => cancelAnimation(turn);
+  }, [reducedMotion, turn]);
+
+  const leftStyle = useAnimatedStyle(() => ({ transform: [{ rotate: `${turn.value * 360}deg` }] }));
+  const rightStyle = useAnimatedStyle(() => ({ transform: [{ rotate: `${turn.value * -360}deg` }] }));
+
+  return (
+    <View accessibilityRole="progressbar" accessibilityLabel="Loading" accessibilityState={{ busy: true }} style={style}>
+      <View style={{ width: pixels, height: pixels, justifyContent: 'center' }}>
+        <View style={{ width: pixels, height: ringSize }}>
+          <Animated.Image source={require('@/assets/images/splash-ring-left.png')} resizeMode="contain"
+            style={[styles.ring, { width: ringSize, height: ringSize, left: 0, tintColor: color }, leftStyle]} />
+          <Animated.Image source={require('@/assets/images/splash-ring-right.png')} resizeMode="contain"
+            style={[styles.ring, { width: ringSize, height: ringSize, right: 0, tintColor: color }, rightStyle]} />
+        </View>
+      </View>
+    </View>
+  );
 }
+
+const styles = StyleSheet.create({ ring: { position: 'absolute', top: 0 } });

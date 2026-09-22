@@ -15,6 +15,7 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppText } from '@/components/app-text';
+import { ExpandableOptions } from '@/components/expandable-options';
 import { IMAGINE_SHEET, ImagineGenerating } from '@/components/imagine-generating';
 import { ModelRamCaption } from '@/components/model-ram-caption';
 import { ProgressMeter } from '@/components/progress-meter';
@@ -59,12 +60,12 @@ import { formatBytes } from '@/utils/format-bytes';
 import { bottomSafeInset } from '@/utils/safe-area';
 import { paintFeedback } from '@/utils/paint-feedback';
 
-const PREVIEW_MAX = 216;
-const PREVIEW_DEFAULT = 168;
-const PREVIEW_KEYBOARD = 112;
+const PREVIEW_MAX = 320;
+const PREVIEW_DEFAULT = 260;
+const PREVIEW_KEYBOARD = 144;
 const COLLAPSE_RANGE = 128;
 
-export function Imagine() {
+export function Imagine({ tab = false }: { tab?: boolean }) {
   const focused = useIsFocused();
   const insets = useSafeAreaInsets();
   const keyboard = useKeyboardInset();
@@ -76,11 +77,11 @@ export function Imagine() {
   const imageBusy = useUiStore((s) => s.imageBusy);
   const mounted = useRef(true);
   const lastProgressAt = useRef(0);
-  const optionBase = useRef<string | null>(null);
   const scrollY = useSharedValue(0);
   const keyboardOpen = useSharedValue(0);
   const [prompt, setPrompt] = useState('');
   const [lastPrompt, setLastPrompt] = useState('');
+  const [ideaPage, setIdeaPage] = useState(0);
   const [look, setLook] = useState<ImagineLookId | null>(null);
   const [detail, setDetail] = useState<ImagineDetailId | null>(null);
   const [seedText, setSeedText] = useState('');
@@ -95,7 +96,7 @@ export function Imagine() {
   // File cache changes when a download/generation finishes, without a new variant.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const cached = useMemo(() => hasCachedTextToImage(variant), [variant, downloadKind, busy]);
-  const suggestions = imagineSuggestions(lastPrompt);
+  const suggestions = imagineSuggestions(prompt.trim() || lastPrompt, ideaPage);
 
   const selected = getTtiVariant(variant);
   const generating = imageBusy || (busy && downloadKind !== 'image');
@@ -126,12 +127,16 @@ export function Imagine() {
 
   useEffect(() => {
     mounted.current = true;
-    attachImagine();
     return () => {
       mounted.current = false;
-      detachImagine();
     };
   }, []);
+
+  useEffect(() => {
+    if (!focused) return;
+    attachImagine();
+    return () => detachImagine();
+  }, [focused]);
 
   useEffect(() => {
     if (!focused) {
@@ -150,19 +155,14 @@ export function Imagine() {
   }, [focused]);
 
   function editPrompt(text: string) {
-    optionBase.current = null;
-    setLook(null);
-    setDetail(null);
     setPrompt(text);
+    setIdeaPage(0);
   }
 
   function selectOptions(nextLook: ImagineLookId | null, nextDetail: ImagineDetailId | null) {
-    // Rebuild only the text added by these controls; preserve the user's words.
-    const base = optionBase.current ?? prompt;
-    optionBase.current = base;
+    // Options are separate from the draft, so a selection cannot restore old text.
     setLook(nextLook);
     setDetail(nextDetail);
-    setPrompt(enhanceImaginePrompt(base, nextLook ?? '', nextDetail ?? ''));
   }
 
   function onProgress(value: number, next: string) {
@@ -229,12 +229,15 @@ export function Imagine() {
       setToast({ kind: 'info', message: 'Wait for Refresh to finish, then generate.' });
       return;
     }
-    const sent = prompt.trim();
-    if (!sent) {
+    const subject = prompt.trim();
+    if (!subject) {
       setToast({ kind: 'info', message: 'Write a short description first.' });
       return;
     }
     const used = parseImagineSeed(seedText) ?? randomImagineSeed();
+    const sent = enhanceImaginePrompt(subject, look ?? '', detail ?? '');
+    rememberImaginePrompt(subject);
+    setLastPrompt(subject);
     setBusy(true);
     setProgress(0.02);
     setLabel(cached ? 'Loading the image model…' : `Saving ${formatBytes(selected.downloadBytes)} first…`);
@@ -249,8 +252,6 @@ export function Imagine() {
       }
       setImageUri(uri);
       setLastSeed(used);
-      rememberImaginePrompt(prompt.trim());
-      setLastPrompt(prompt.trim());
       setToast({ kind: 'success', message: 'Picture ready. You can save it to Photos.' });
     } catch (error) {
       if (!mounted.current) {
@@ -300,9 +301,9 @@ export function Imagine() {
 
   return (
     <ScreenScaffold scroll={false}>
-      <View style={[styles.page, { paddingBottom: keyboard > 0 ? keyboard : bottomSafeInset(insets.bottom) }]}>
+      <View style={[styles.page, { paddingBottom: keyboard > 0 ? keyboard : tab ? 0 : bottomSafeInset(insets.bottom) }]}>
         <View style={styles.bar}>
-          <ScreenBack accessibilityLabel="Go back" />
+          {!tab && <ScreenBack accessibilityLabel="Go back" />}
           <View style={styles.barCopy}>
             <AppText variant="h3">Imagine</AppText>
             <AppText variant="caption">
@@ -379,7 +380,11 @@ export function Imagine() {
               style={styles.prompt}
               value={prompt}
             />
-            <AppText variant="labelSmall">{lastPrompt ? 'Next ideas from your last picture' : 'Try an idea'}</AppText>
+          </View>
+
+          <View style={styles.card}>
+            <ExpandableOptions title="Idea" icon="bulb-outline">
+            <AppText style={styles.hint} variant="caption">{prompt.trim() ? 'Ideas from your current prompt' : lastPrompt ? 'Ideas from your previous prompt' : 'Try a starting idea'}</AppText>
             <View style={styles.chipRow}>
               {suggestions.map((item) => (
                 <Pressable
@@ -401,11 +406,16 @@ export function Imagine() {
                 </Pressable>
               ))}
             </View>
+            <Pressable accessibilityRole="button" disabled={blocked} onPress={() => setIdeaPage((page) => page + 1)} style={styles.chip}>
+              <Ionicons name="refresh-outline" size={16} color={colors.primary[600]} />
+              <AppText variant="labelSmall">More ideas</AppText>
+            </Pressable>
+            </ExpandableOptions>
           </View>
 
           <View style={styles.card}>
-            <AppText variant="labelSmall">Look · optional</AppText>
-            <AppText style={styles.hint} variant="caption">Options update your prompt. Only the text above is sent.</AppText>
+            <ExpandableOptions icon="color-palette-outline" title={look ? `Look · ${IMAGINE_LOOKS.find((item) => item.id === look)?.label}` : 'Look · optional'}>
+            <AppText style={styles.hint} variant="caption">Applies when you generate. Your prompt stays unchanged.</AppText>
             <View style={styles.chipRow}>
               {IMAGINE_LOOKS.map((item) => (
                 <Pressable
@@ -424,7 +434,11 @@ export function Imagine() {
                 </Pressable>
               ))}
             </View>
-            <AppText variant="labelSmall">Detail · optional</AppText>
+            </ExpandableOptions>
+          </View>
+
+          <View style={styles.card}>
+            <ExpandableOptions icon="options-outline" title={detail ? `Detail · ${IMAGINE_DETAILS.find((item) => item.id === detail)?.label}` : 'Detail · optional'}>
             <View style={styles.chipRow}>
               {IMAGINE_DETAILS.map((item) => (
                 <Pressable
@@ -443,6 +457,7 @@ export function Imagine() {
                 </Pressable>
               ))}
             </View>
+            </ExpandableOptions>
           </View>
 
           <View style={styles.card}>

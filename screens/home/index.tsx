@@ -1,5 +1,5 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { type Href, useIsFocused, useRouter } from 'expo-router';
+import { useIsFocused, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { AppPressable as Pressable } from '@/components/app-pressable';
@@ -249,7 +249,7 @@ function FinanceOverview() {
               onPress={() => {
                 setFinanceBankId(null);
                 setFinanceCategory(null);
-                router.push('/(tabs)/finance' as Href);
+                router.navigate({ pathname: '/(tabs)/finance', params: { section: 'finance' } });
               }}
               style={styles.pill}>
               <Ionicons color={colors.primary[600]} name="layers-outline" size={16} />
@@ -270,7 +270,7 @@ function FinanceOverview() {
                 onPress={() => {
                   setFinanceBankId(account.id);
                   setFinanceCategory(null);
-                  router.push('/(tabs)/finance' as Href);
+                  router.navigate({ pathname: '/(tabs)/finance', params: { section: 'finance' } });
                 }}
                 style={styles.pill}>
                 <Ionicons color={colors.primary[600]} name="business-outline" size={16} />
@@ -300,7 +300,7 @@ function FinanceOverview() {
                 key={category.id}
                 onPress={() => {
                   setFinanceCategory(category.id);
-                  router.push('/(tabs)/finance' as Href);
+                  router.navigate({ pathname: '/(tabs)/finance', params: { section: 'finance' } });
                 }}
                 style={styles.categoryCard}>
                 <View style={styles.categoryIcon}>

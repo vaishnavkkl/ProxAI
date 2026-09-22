@@ -1,12 +1,5 @@
-import { StatusBar } from 'expo-status-bar';
-
-import { Splash } from '@/screens/splash';
+import { Redirect } from 'expo-router';
 
 export default function SplashRoute() {
-  return (
-    <>
-      <StatusBar style="light" />
-      <Splash />
-    </>
-  );
+  return <Redirect href="/home" />;
 }

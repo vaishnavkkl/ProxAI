@@ -1,11 +1,12 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { paintFeedback } from '@/utils/paint-feedback';
 import { isModelTimeout } from '@/services/model-deadline';
-import { useNavigation } from 'expo-router';
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { useFocusEffect, useIsFocused, useNavigation } from 'expo-router';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { AppPressable as Pressable } from '@/components/app-pressable';
 import { LogoLoader as ActivityIndicator } from '@/components/logo-loader';
+import { ChatContextUsage, ChatTokenSpeed } from '@/components/chat-metrics';
 
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -145,7 +146,8 @@ const CoachThread = memo(function CoachThread({ switching, switchLabel }: { swit
   );
 });
 
-export function Coach() {
+export function Coach({ tab = false }: { tab?: boolean }) {
+  const isFocused = useIsFocused();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const keyboard = useKeyboardInset();
@@ -194,11 +196,13 @@ export function Coach() {
   const summary = useMemo(() => summarizeMonth(items, salary, expenses), [items, salary, expenses]);
   const plan = useMemo(() => buildSpendPlan(items, salary, expenses), [items, salary, expenses]);
   const prompts = useMemo(() => chatSuggestions(suggestionContext), [suggestionContext]);
-  const blocked = busy || isProcessing || switching || leaving || loadingModel || !!loadError;
+  const blocked = !isFocused || busy || isProcessing || switching || leaving || loadingModel || !!loadError;
   const canSend = !blocked && draft.trim().length > 0;
-  const composerPad = keyboard > 0 ? spacing.sm : bottomSafeInset(insets.bottom) + spacing.sm;
+  const composerPad = keyboard > 0 || tab ? spacing.sm : bottomSafeInset(insets.bottom) + spacing.sm;
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
+    setLoadingModel(true);
+    setLoadError('');
     let active = true;
     let acquired = false;
     released.current = false;
@@ -230,6 +234,7 @@ export function Coach() {
     });
     return () => {
       active = false;
+      setLoadingModel(true);
       if (released.current || !acquired) {
         return;
       }
@@ -238,9 +243,10 @@ export function Coach() {
         useUiStore.getState().setModelInRam(getModelRamState().loaded);
       });
     };
-  }, []);
+  }, []));
 
   useEffect(() => {
+    if (tab) return;
     const stop = navigation.addListener('beforeRemove', (event) => {
       if (released.current) {
         return;
@@ -250,7 +256,7 @@ export function Coach() {
       setDialog('leave');
     });
     return stop;
-  }, [navigation]);
+  }, [navigation, tab]);
 
   useEffect(() => {
     if (!pendingAsk || blocked) {
@@ -392,7 +398,7 @@ export function Coach() {
       subscriptions,
       events: relevantEvents(events, lifeStates),
       life: openLife,
-    });
+    }, question);
     const prior = useCoachStore.getState().messages.slice(0, -1);
     const fallback = fallbackCoachReply(plan, question, openLife);
     let assistantId: string | null = null;
@@ -465,7 +471,7 @@ export function Coach() {
   return (
     <SafeAreaView edges={['top']} style={styles.safe}>
       <View style={styles.bar}>
-        <ScreenBack accessibilityLabel="Go back" />
+        {!tab && <ScreenBack accessibilityLabel="Go back" />}
         <Pressable
           accessibilityHint="Opens models on this phone or marks one to download in Settings"
           accessibilityLabel={`${catalog.label}. ${modelInRam ? 'Loaded in RAM' : 'Not loaded'}. Tap to switch`}
@@ -494,6 +500,7 @@ export function Coach() {
             <ModelRamCaption loadBytes={catalog.modelBytes} loaded={modelInRam} paused={busy || switching} />
           )}
         </Pressable>
+        <ChatTokenSpeed />
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Start a new chat"
@@ -593,6 +600,7 @@ export function Coach() {
           ))}
         </ScrollView>
 
+        <ChatContextUsage />
         <View style={[styles.composer, focused ? styles.composerOn : undefined, { marginBottom: composerPad }]}>
           <ChatOcrButton disabled={blocked} onAsk={setPendingAsk} />
           <TextInput

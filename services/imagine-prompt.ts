@@ -45,6 +45,9 @@ const STARTER_SUGGESTIONS: ImagineSuggestion[] = [
   { id: 'backwater', label: 'Backwater', prompt: TTI_PROMPTS[0], icon: 'water-outline' },
   { id: 'rupee', label: 'Rupee', prompt: TTI_PROMPTS[1], icon: 'cash-outline' },
   { id: 'chai', label: 'Chai', prompt: TTI_PROMPTS[2], icon: 'cafe-outline' },
+  { id: 'forest', label: 'Forest', prompt: 'A winding path through a misty forest at sunrise', icon: 'rainy-outline' },
+  { id: 'city', label: 'City lights', prompt: 'A quiet city street with glowing lights reflected on wet pavement', icon: 'moon-outline' },
+  { id: 'space', label: 'Moon garden', prompt: 'A tiny glass garden on the moon with Earth on the horizon', icon: 'expand-outline' },
 ];
 
 const STYLE_TAIL =
@@ -140,23 +143,32 @@ export function applyImagineStyle(prompt: string, lookId: string, detailId: stri
 export function imagineSceneBase(prompt: string) {
   return prompt
     .replace(/^(a close-up of|a wide view of)\s+/i, '')
-    .replace(/,\s*(at night, warm lights|light rain, wet surfaces)\s*/gi, '')
+    .replace(/,\s*(at night, warm lights|light rain, wet surfaces|at sunrise, golden light|in a miniature diorama|with a bold monochrome palette|from a low angle, dramatic perspective)\s*/gi, '')
     .replace(STYLE_TAIL, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
 
-export function imagineSuggestions(lastPrompt: string): ImagineSuggestion[] {
+export function imagineSuggestions(lastPrompt: string, page = 0): ImagineSuggestion[] {
   const base = imagineSceneBase(lastPrompt);
   if (!base) {
-    return STARTER_SUGGESTIONS;
+    const offset = (page * 3) % STARTER_SUGGESTIONS.length;
+    return [...STARTER_SUGGESTIONS.slice(offset), ...STARTER_SUGGESTIONS.slice(0, offset)].slice(0, 3);
   }
-  return [
+  const ideas: ImagineSuggestion[] = [
     { id: 'closer', label: 'Closer', prompt: `A close-up of ${base}`, icon: 'scan-outline' },
     { id: 'night', label: 'Night', prompt: `${base}, at night, warm lights`, icon: 'moon-outline' },
     { id: 'rain', label: 'Rain', prompt: `${base}, light rain, wet surfaces`, icon: 'rainy-outline' },
     { id: 'wide', label: 'Wider', prompt: `A wide view of ${base}`, icon: 'expand-outline' },
+    { id: 'sunrise', label: 'Sunrise', prompt: `${base}, at sunrise, golden light`, icon: 'water-outline' },
+    { id: 'miniature', label: 'Miniature', prompt: `${base}, in a miniature diorama`, icon: 'scan-outline' },
+    { id: 'monochrome', label: 'Monochrome', prompt: `${base}, with a bold monochrome palette`, icon: 'moon-outline' },
+    { id: 'low-angle', label: 'Low angle', prompt: `${base}, from a low angle, dramatic perspective`, icon: 'expand-outline' },
   ];
+  // The subject chooses the initial set; More ideas cycles through alternatives.
+  const subjectHash = [...base].reduce((sum, character) => (sum * 31 + character.charCodeAt(0)) >>> 0, 0);
+  const offset = (subjectHash + page * 4) % ideas.length;
+  return [...ideas.slice(offset), ...ideas.slice(0, offset)].slice(0, 4);
 }
 
 export function lastImaginePrompt() {

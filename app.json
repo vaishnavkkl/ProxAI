@@ -43,7 +43,6 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#0d1828",
@@ -62,6 +61,7 @@
       [
         "expo-notifications",
         {
+          "icon": "./assets/images/android-icon-monochrome.png",
           "color": "#2563EB",
           "defaultChannel": "reminders",
           "enableBackgroundRemoteNotifications": false
@@ -75,7 +75,8 @@
           "microphonePermission": false
         }
       ],
-      "./plugins/with-large-heap.cjs"
+      "./plugins/with-large-heap.cjs",
+      "./plugins/with-animated-startup.cjs"
     ],
     "experiments": {
       "typedRoutes": true,

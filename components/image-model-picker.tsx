@@ -114,7 +114,7 @@ export function ImageModelPicker({ onDiskChange }: ImageModelPickerProps) {
       <Pressable
         accessibilityRole="button"
         onPress={() => {
-          router.push('/imagine' as Href);
+          router.navigate('/(tabs)/create' as Href);
         }}>
         <AppText style={styles.link} variant="labelSmall">
           Open Imagine

@@ -1,5 +1,5 @@
-import { Subscriptions } from '@/screens/subscriptions';
+import { Redirect } from 'expo-router';
 
 export default function SubscriptionsRoute() {
-  return <Subscriptions />;
+  return <Redirect href={{ pathname: '/(tabs)/finance', params: { section: 'renewals' } }} />;
 }

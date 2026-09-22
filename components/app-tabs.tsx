@@ -58,36 +58,35 @@ export function AppTabs() {
         <Tabs.Screen
           name="finance"
           options={{
-            title: 'Finance',
+            title: 'Organizer',
             tabBarIcon: ({ color, focused }) => (
               <Ionicons
                 color={color}
-                name={focused ? 'wallet' : 'wallet-outline'}
+                name={focused ? 'albums' : 'albums-outline'}
                 size={ICON_SIZE}
               />
             ),
           }}
         />
         <Tabs.Screen
-          name="events"
+          name="chat"
           options={{
-            title: 'Events',
+            title: 'Chat',
             tabBarIcon: ({ color, focused }) => (
               <Ionicons
                 color={color}
-                name={focused ? 'calendar' : 'calendar-outline'}
+                name={focused ? 'chatbubbles' : 'chatbubbles-outline'}
                 size={ICON_SIZE}
               />
             ),
           }}
         />
         <Tabs.Screen
-          name="subscriptions"
+          name="create"
           options={{
-            title: 'Renewals',
-            tabBarAccessibilityLabel: 'Subscriptions',
+            title: 'Text to Image',
             tabBarIcon: ({ color, focused }) => (
-              <Ionicons color={color} name={focused ? 'card' : 'card-outline'} size={ICON_SIZE} />
+              <Ionicons color={color} name={focused ? 'image' : 'image-outline'} size={ICON_SIZE} />
             ),
           }}
         />
@@ -104,6 +103,8 @@ export function AppTabs() {
             ),
           }}
         />
+        <Tabs.Screen name="events" options={{ href: null }} />
+        <Tabs.Screen name="subscriptions" options={{ href: null }} />
       </Tabs>
     </>
   );

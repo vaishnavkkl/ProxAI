@@ -1,6 +1,6 @@
 import { AppBottomSheet } from '@/components/app-bottom-sheet';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { FlatList, ScrollView, StyleSheet, View } from 'react-native';
 import { AppPressable as Pressable } from '@/components/app-pressable';
 
@@ -49,7 +49,7 @@ function FinanceHeader({
   const items = useTransactionStore((s) => s.financeItems);
   const bankId = useUiStore((s) => s.financeBankId);
   const setFinanceBankId = useUiStore((s) => s.setFinanceBankId);
-  const accounts = listBankAccounts(items);
+  const accounts = useMemo(() => listBankAccounts(items), [items]);
   const selected = accounts.find((account) => account.id === bankId);
 
   return (
@@ -165,7 +165,7 @@ function EmptyFinance() {
   );
 }
 
-export function Finance() {
+export function Finance({ embedded = false }: { embedded?: boolean }) {
   const items = useTransactionStore((s) => s.financeItems);
   const category = useUiStore((s) => s.financeCategory);
   const bankId = useUiStore((s) => s.financeBankId);
@@ -179,18 +179,20 @@ export function Finance() {
   const [planOpen, setPlanOpen] = useState(false);
   const [sort, setSort] = useState<LedgerSort>('recent');
   const [flow, setFlow] = useState<'all' | 'debit' | 'credit'>('all');
-  const scoped = items.filter((item) => {
+  const data = useMemo(() => sortLedgerItems(items.filter((item) => {
     if (flow !== 'all' && (flow === 'credit') !== (item.category === 'income')) return false;
     if (category && item.category !== category) {
       return false;
     }
     return inBankAccount(item, bankId);
-  });
-  const data = sortLedgerItems(scoped, sort);
+  }), sort), [items, flow, category, bankId, sort]);
 
   return (
-    <ScreenScaffold scroll={false}>
+    <ScreenScaffold scroll={false} embedded={embedded}>
       <FlatList
+        initialNumToRender={8}
+        maxToRenderPerBatch={8}
+        windowSize={7}
         contentContainerStyle={styles.list}
         data={data}
         extraData={`${sort}:${category ?? ''}:${bankId ?? ''}:${flow}`}

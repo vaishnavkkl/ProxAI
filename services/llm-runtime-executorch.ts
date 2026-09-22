@@ -10,14 +10,14 @@ import { getFinlifeNative } from '@/services/finlife-native';
 import { exclusiveInference, occupyInference, releaseInference } from '@/services/inference-slot';
 import { isVisionLoaded, unloadVisionFromMemory } from '@/services/vision-slot';
 import { finishDownloadNotice, reportDownloadNotice } from '@/services/download-notice';
-import { recordLlmReplyMetrics } from '@/services/llm-metrics';
+import { clearChatMetrics, recordLlmReplyMetrics, updateChatContext, useLlmMetricsStore } from '@/services/llm-metrics';
 import { createStatelessLlmSession } from '@/services/stateless-llm-session';
 import { createCoachLlmSession, type CoachLlmSession } from '@/services/coach-llm-session';
 import { canUseNativeLlm } from '@/utils/app-runtime';
 import type { ParsedItem } from '@/types/llm-output';
 import type { IncomingMessage } from '@/utils/bank-parsers';
 import { parseCompleteModelJson } from '@/utils/json-from-model';
-import { isModelTaskDraining, MODEL_TIMEOUT_MESSAGE, runModelTask } from '@/services/model-deadline';
+import { isModelTaskDraining, MODEL_TIMEOUT_MESSAGE, REFRESH_TIMEOUT_MESSAGE, REFRESH_TIMEOUT_MS, runModelTask } from '@/services/model-deadline';
 
 import { toInrText } from '@/utils/format-inr';
 import { transferLabel } from '@/utils/format-bytes';
@@ -51,11 +51,11 @@ const VERIFY_PROMPT = [
 
 const COACH_PROMPT = [
   'You are a personal assistant on this phone for this user’s real life, not a generic chatbot.',
-  'SNAPSHOT is their saved plans on this phone: tasks, events, travel, deliveries, due bills, and security reviews.',
+  'SNAPSHOT contains their saved finance records and plans on this phone: income, spending, budget, transactions, renewals, tasks, events, travel, deliveries, bills, and security reviews.',
   'When QUESTION is about their plans — today, tasks, travel, deliveries, or what they should do — answer from SNAPSHOT. Name their real items. Do not invent facts.',
   'If SNAPSHOT has no fact for the question, say that is not saved yet. Do not guess.',
   'If QUESTION is general knowledge and not about this user, answer normally and do not drag in their plans.',
-  'Do not use, invent, or quote money, spends, paycheck, or bank amounts. For money questions, say those stay in Finance.',
+  'Answer finance questions using the amounts and dates in SNAPSHOT. Never claim you lack access when relevant records are provided. Distinguish recorded transactions from live bank balances, and budget estimates from confirmed balances. Do not invent missing records or amounts.',
   'If QUESTION includes OCR text from a photo, work from that text. You cannot see images.',
   'Answer the current QUESTION. If CHAT exists, continue that thread. Do not restart a full briefing.',
   'Reply directly and briefly in plain sentences. Do not repeat earlier answers.',
@@ -80,10 +80,12 @@ let coachUsers = 0;
 let activeTaskSignal: AbortSignal | undefined;
 
 function checkModelDeadline() {
-  if (activeTaskSignal?.aborted) throw new Error(MODEL_TIMEOUT_MESSAGE);
+  if (activeTaskSignal?.aborted) throw activeTaskSignal.reason instanceof Error ? activeTaskSignal.reason : new Error(MODEL_TIMEOUT_MESSAGE);
 }
 
 function modelExclusive<T>(work: () => Promise<T>): Promise<T> {
+  const ui = useUiStore.getState();
+  const refreshing = scanHold || (ui.isProcessing && ui.workKind === 'scan');
   return runModelTask(async (signal) => {
     activeTaskSignal = signal;
     try { return await work(); } finally { activeTaskSignal = undefined; }
@@ -91,7 +93,7 @@ function modelExclusive<T>(work: () => Promise<T>): Promise<T> {
     interruptVersion += 1;
     resetCoachBeforeNextTurn = true;
     session?.stop();
-  }, () => unloadSession());
+  }, () => unloadSession(), refreshing ? { timeoutMs: REFRESH_TIMEOUT_MS, message: REFRESH_TIMEOUT_MESSAGE } : undefined);
 }
 
 function nativeApi() {
@@ -115,6 +117,7 @@ function exclusive<T>(work: () => Promise<T>): Promise<T> {
 }
 
 function markRam(loaded: boolean) {
+  if (!loaded) clearChatMetrics();
   useUiStore.getState().setModelInRam(loaded);
 }
 
@@ -375,6 +378,7 @@ async function loadSession(onProgress: ProgressFn, kind: SessionKind): Promise<L
     checkModelDeadline();
     const createSession = kind === 'coach' ? createCoachLlmSession : createStatelessLlmSession;
     const chat = await createSession(cached, {
+      ...(kind === 'coach' ? { onContextUpdate: updateChatContext } : {}),
       resetOnTurn: false,
       initialMessages: [{ role: 'system', content: sessionPrompt(kind) }],
       generationConfig: {
@@ -388,7 +392,7 @@ async function loadSession(onProgress: ProgressFn, kind: SessionKind): Promise<L
 
     if (activeTaskSignal?.aborted) {
       await forceUnload(chat);
-      throw new Error(MODEL_TIMEOUT_MESSAGE);
+      checkModelDeadline();
     }
     if (session) {
       await forceUnload(chat);
@@ -629,6 +633,9 @@ async function askCoach(
     let lastTokenAt = 0;
     let firstTextAtMs: number | undefined;
     let loopStopped = false;
+    let decodedTokens = 0;
+    let decodeStartedAt = 0;
+    let speedUpdatedAt = 0;
     let tokenTimer: ReturnType<typeof setTimeout> | undefined;
     const flushTokens = () => {
       tokenTimer = undefined;
@@ -657,6 +664,7 @@ async function askCoach(
       }
       const chat = await ensureSession(onProgress, 'coach');
       if (version !== interruptVersion) return '';
+      useLlmMetricsStore.setState({ generating: true, liveTokensPerSecond: null });
       resetCoachBeforeNextTurn = false;
       onProgress(0.82, 'Writing…');
       const turns = (chat.getHistory().length <= 1 ? history : [])
@@ -666,11 +674,18 @@ async function askCoach(
       // Native history already contains unchanged context and previous turns.
       // Re-sending it wastes prefill time and fills the KV cache prematurely.
       const context = currentSnapshot && currentSnapshot !== coachSnapshotInSession
-        ? `SNAPSHOT is this user's saved plans on this phone. Use it for questions about their day, not money.\nSNAPSHOT\n${currentSnapshot}\n`
+        ? `SNAPSHOT contains this user's saved finance records and plans. Use the relevant facts to answer; these are local records, not live bank access.\nSNAPSHOT\n${currentSnapshot}\n`
         : '';
       const userContent = `${context}${turns ? `CHAT\n${turns}\n` : ''}QUESTION\n${question.slice(0, 1600)}`;
       const result = await chat.sendMessage(userContent, (token) => {
         if (loopStopped || version !== interruptVersion) return;
+        decodedTokens += 1;
+        const tokenTime = Date.now();
+        if (!decodeStartedAt) decodeStartedAt = tokenTime;
+        if (decodedTokens > 1 && tokenTime - speedUpdatedAt >= 250 && tokenTime > decodeStartedAt) {
+          useLlmMetricsStore.setState({ liveTokensPerSecond: (decodedTokens - 1) * 1000 / (tokenTime - decodeStartedAt) });
+          speedUpdatedAt = tokenTime;
+        }
         streamed += token;
         const trimmed = trimModelLoop(streamed);
         if (trimmed !== null) {
@@ -709,7 +724,10 @@ async function askCoach(
         stats: result.stats,
         requestStartedAtMs,
         firstTextAtMs,
-        context: chat.getKVCacheState(),
+        context: {
+          ...chat.getKVCacheState(),
+          pos: chat.getKVCacheState().pos + ('getPendingTokenCount' in chat ? (chat as CoachLlmSession).getPendingTokenCount() : 0),
+        },
       });
       return text;
     } catch (error) {
@@ -724,6 +742,7 @@ async function askCoach(
       throw error;
     } finally {
       generating = false;
+      useLlmMetricsStore.setState({ generating: false, liveTokensPerSecond: null });
     }
   });
 }

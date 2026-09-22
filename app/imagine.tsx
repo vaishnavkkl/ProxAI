@@ -1,5 +1,5 @@
-import { Imagine } from '@/screens/imagine';
+import { Redirect } from 'expo-router';
 
 export default function ImagineRoute() {
-  return <Imagine />;
+  return <Redirect href="/(tabs)/create" />;
 }

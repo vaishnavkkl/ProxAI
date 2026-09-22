@@ -46,7 +46,9 @@ function generateReply(
 /** Incremental chat with explicit context reset, independent of model lifetime. */
 export async function createCoachLlmSession(
   model: LLMModel,
-  options: LLMChatSessionOptions = {},
+  options: LLMChatSessionOptions & {
+    onContextUpdate?: (used: number, capacity: number, estimated: boolean) => void;
+  } = {},
 ): Promise<CoachLlmSession> {
   const { llm: nativeLlm, createResourceScope, wrapAsync, RnExecuTorchError } =
     require('react-native-executorch') as typeof import('react-native-executorch');
@@ -78,6 +80,11 @@ export async function createCoachLlmSession(
     let busy = false;
     let disposed = false;
     let stopVersion = 0;
+    const publishContext = () => {
+      const state = runner.getKVCacheState();
+      options.onContextUpdate?.(state.pos + pendingTokenCount, state.maxSeqLen, pendingTokenCount > 0);
+    };
+    publishContext();
 
     const assertIdle = () => {
       if (disposed || busy) {
@@ -107,6 +114,7 @@ export async function createCoachLlmSession(
           history.splice(0, history.length, ...initialMessages);
           committed = 0;
           pendingTokenCount = 0;
+          publishContext();
         } finally {
           preprocessor.clear();
           busy = false;
@@ -138,6 +146,20 @@ export async function createCoachLlmSession(
           const endOfUser = runner.getKVCacheState().pos;
           committed = history.length;
           pendingTokenCount = 0;
+          publishContext();
+          const capacity = runner.getKVCacheState().maxSeqLen;
+          let generatedTokens = 0;
+          let lastContextUpdate = 0;
+          const forwardToken = (token: string) => {
+            if (!busy || disposed || version !== stopVersion) return;
+            generatedTokens += 1;
+            const now = Date.now();
+            if (now - lastContextUpdate >= 250) {
+              options.onContextUpdate?.(endOfUser + generatedTokens, capacity, true);
+              lastContextUpdate = now;
+            }
+            onToken?.(token);
+          };
           const prompt = preprocessor.process(history, 0, { addGenPrompt: true });
           const prefillDurationMs = Date.now() - startedPrefill;
           const result = await generate(runner, prompt, {
@@ -147,9 +169,10 @@ export async function createCoachLlmSession(
             // Prompt echo must never enter the conversation history.
             echo: false,
             ignoreEos: false,
-          }, endOfUser, eosToken, options.stopRegex, onToken);
+          }, endOfUser, eosToken, options.stopRegex, forwardToken);
           history.push({ role: 'assistant', content: result.response });
           pendingTokenCount = result.stats.numGeneratedTokens + 16;
+          publishContext();
           return {
             messages: history.slice(turnStart),
             stats: [{ ...result.stats, prefillDurationMs }],
@@ -161,6 +184,7 @@ export async function createCoachLlmSession(
           pendingTokenCount = previousPendingTokenCount;
           // A failed turn must not leave a user prefix or partial response in KV.
           await reset(runner, resetForTurn ? 0 : previousPos);
+          publishContext();
           throw error;
         } finally {
           preprocessor.clear();

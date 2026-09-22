@@ -1,5 +1,5 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { SectionList, StyleSheet, View } from 'react-native';
 import { AppPressable as Pressable } from '@/components/app-pressable';
 
@@ -20,15 +20,18 @@ import type { LedgerItem } from '@/types/ledger';
 function keyExtractor(item: LedgerItem) { return item.id; }
 function renderEvent({ item }: { item: LedgerItem }) { return <EventRow item={item} />; }
 
-export function Events() {
+export function Events({ embedded = false }: { embedded?: boolean }) {
   const storedItems = useEventStore((s) => s.items);
   const states = useLifeStore((s) => s.states);
   const [filter, setFilter] = useState<'all' | 'personal' | 'holidays'>('all');
   const [importing, setImporting] = useState(false);
-  const items = relevantEvents([...storedItems, ...regionalHolidays()], states).filter((item) => filter === 'all' || (filter === 'holidays' ? isHolidayEvent(item) : !isHolidayEvent(item)));
-  const grouped = new Map<string, LedgerItem[]>();
-  for (const item of items) { const key = item.date!.slice(0, 7); const group = grouped.get(key) ?? []; group.push(item); grouped.set(key, group); }
-  const sections = [...grouped].map(([key, data]) => ({ key, title: parseLocalDate(`${key}-01`).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' }), data }));
+  const allEvents = useMemo(() => relevantEvents([...storedItems, ...regionalHolidays()], states), [storedItems, states]);
+  const sections = useMemo(() => {
+    const items = allEvents.filter((item) => filter === 'all' || (filter === 'holidays' ? isHolidayEvent(item) : !isHolidayEvent(item)));
+    const grouped = new Map<string, LedgerItem[]>();
+    for (const item of items) { const key = item.date!.slice(0, 7); const group = grouped.get(key) ?? []; group.push(item); grouped.set(key, group); }
+    return [...grouped].map(([key, data]) => ({ key, title: parseLocalDate(`${key}-01`).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' }), data }));
+  }, [allEvents, filter]);
   async function refreshCalendar() {
     if (importing) return;
     setImporting(true);
@@ -36,8 +39,8 @@ export function Events() {
     catch (error) { useUiStore.getState().setToast({ kind: 'error', message: error instanceof Error ? error.message : 'Calendar import failed.' }); }
     finally { setImporting(false); }
   }
-  return <ScreenScaffold scroll={false}>
-    <SectionList style={styles.fill} sections={sections} keyExtractor={keyExtractor} renderItem={renderEvent} stickySectionHeadersEnabled={false} showsVerticalScrollIndicator={false} contentContainerStyle={styles.list}
+  return <ScreenScaffold scroll={false} embedded={embedded}>
+    <SectionList style={styles.fill} sections={sections} initialNumToRender={8} maxToRenderPerBatch={8} windowSize={7} keyExtractor={keyExtractor} renderItem={renderEvent} stickySectionHeadersEnabled={false} showsVerticalScrollIndicator={false} contentContainerStyle={styles.list}
       ListHeaderComponent={<View style={styles.header}>
         <SectionHero title="Good days ahead" subtitle="Your plans, Kerala & India holidays" icon="calendar-outline" />
         <View style={styles.tools}><View style={styles.copy}><AppText variant="h4">Your calendar</AppText><AppText variant="caption" style={styles.muted}>Upcoming from today · next 2 months</AppText></View><Pressable accessibilityRole="button" disabled={importing} onPress={() => void refreshCalendar()} style={styles.importButton}><Ionicons name="sync-outline" size={18} color={colors.primary[600]} /><AppText variant="labelSmall" style={styles.blue}>{importing ? 'Syncing…' : 'Sync calendar'}</AppText></Pressable></View>

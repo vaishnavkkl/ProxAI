@@ -11,15 +11,16 @@ type ScreenScaffoldProps = {
   scroll?: boolean;
   /** Extra bottom inset for stack screens. Tab screens already clear the nav bar via the tab bar. */
   stack?: boolean;
+  embedded?: boolean;
 };
 
-export function ScreenScaffold({ children, scroll = true, stack = false }: ScreenScaffoldProps) {
+export function ScreenScaffold({ children, scroll = true, stack = false, embedded = false }: ScreenScaffoldProps) {
   const insets = useSafeAreaInsets();
   const bottom = spacing['2xl'] + (stack ? bottomSafeInset(insets.bottom) : 0);
   const body = <View style={[styles.content, scroll ? undefined : styles.contentFill]}>{children}</View>;
 
   return (
-    <SafeAreaView edges={['top']} style={styles.safe}>
+    <SafeAreaView edges={embedded ? [] : ['top']} style={styles.safe}>
       <KeyboardScreen>
         {scroll ? (
           <ScrollView

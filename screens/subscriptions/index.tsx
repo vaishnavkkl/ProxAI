@@ -1,5 +1,5 @@
 ﻿import Ionicons from '@expo/vector-icons/Ionicons';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { SectionList, StyleSheet, View } from 'react-native';
 import { AppPressable as Pressable } from '@/components/app-pressable';
 
@@ -30,21 +30,25 @@ function RenewalRow({ item }: { item: LedgerItem }) {
 }
 function keyExtractor(item: LedgerItem) { return item.id; }
 
-export function Subscriptions() {
+export function Subscriptions({ embedded = false }: { embedded?: boolean }) {
   const router = useRouter();
   const storedItems = useSubscriptionStore((s) => s.items);
   const states = useLifeStore((s) => s.states);
-  const items = confirmedRenewals(storedItems, states);
+  const items = useMemo(() => confirmedRenewals(storedItems, states), [storedItems, states]);
   const [capture, setCapture] = useState<{ mode: 'renewal'; title: string } | null>(null);
   const [showApps, setShowApps] = useState(true);
   useEffect(() => { void importInstalledSubscriptions().catch(() => undefined); }, []);
-  const apps = storedItems.filter((item) => item.id.startsWith('app-') && !items.some((renewal) => renewal.merchant?.toLowerCase() === item.merchant?.toLowerCase()));
+  const apps = useMemo(() => {
+    const confirmed = new Set(items.map((item) => item.merchant?.toLowerCase()));
+    return storedItems.filter((item) => item.id.startsWith('app-') && !confirmed.has(item.merchant?.toLowerCase()));
+  }, [storedItems, items]);
+  const sections = useMemo(() => [{ key: 'plans', data: items }, { key: 'apps', data: showApps ? apps : [] }], [items, apps, showApps]);
   async function openApp(id: string) {
     try { await openDiscoveredApp(id); }
     catch (error) { useUiStore.getState().setToast({ kind: 'info', message: error instanceof Error ? error.message : 'Could not open this app.' }); }
   }
-  return <ScreenScaffold scroll={false}>
-    <SectionList sections={[{ key: 'plans', data: items }, { key: 'apps', data: showApps ? apps : [] }]} stickySectionHeadersEnabled={false} keyExtractor={keyExtractor} contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}
+  return <ScreenScaffold scroll={false} embedded={embedded}>
+    <SectionList sections={sections} initialNumToRender={8} maxToRenderPerBatch={8} windowSize={7} stickySectionHeadersEnabled={false} keyExtractor={keyExtractor} contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}
       renderItem={({ item, section }) => section.key === 'plans' ? <RenewalRow item={item} /> : <View style={styles.appCard}>
         <View style={styles.cardTop}><SubscriptionIcon id={item.id} name={item.merchant ?? ""} /><View style={styles.copy}><AppText variant="labelRegular">{item.merchant}</AppText><AppText variant="caption" style={styles.muted}>Found on your phone</AppText></View><Pressable accessibilityRole="button" accessibilityLabel={`Open ${item.merchant}`} onPress={() => void openApp(item.id)} style={styles.openButton}><Ionicons name="open-outline" size={21} color={colors.primary[600]} /></Pressable></View>
         <View style={styles.cardTop}><AppText variant="caption" style={styles.copy}>Plan details not added yet</AppText><Pressable accessibilityRole="button" onPress={() => setCapture({ mode: 'renewal', title: item.merchant ?? '' })} style={styles.addPlan}><Ionicons name="add" size={17} color={colors.primary[600]} /><AppText variant="labelSmall" style={styles.blue}>Add my plan</AppText></Pressable></View>

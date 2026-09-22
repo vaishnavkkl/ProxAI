@@ -16,6 +16,8 @@ export function GradientTabButton({
   return (
     <PlatformPressable
       {...props}
+      pressColor="transparent"
+      pressOpacity={1}
       onPressIn={(event) => {
         if (process.env.EXPO_OS !== 'web') {
           void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);

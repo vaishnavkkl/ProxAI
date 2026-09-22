@@ -123,7 +123,7 @@ export function LifeAgenda({ footer }: { footer?: ReactNode }) {
         <View style={styles.copy}><AppText variant="overline" style={styles.blue}>PERSONAL ASSISTANT</AppText><AppText variant="h4">Ask about your day.</AppText><AppText variant="bodySmall" style={styles.muted}>Tasks, travel, deliveries, and bills — on this phone</AppText></View>
         <Ionicons name="arrow-forward" size={22} color={colors.primary[600]} />
       </Pressable>
-      <Pressable accessibilityRole="button" accessibilityLabel="Open text to image" onPress={() => router.push('/imagine')} style={styles.screenshotFeature}>
+      <Pressable accessibilityRole="button" accessibilityLabel="Open text to image" onPress={() => router.navigate('/(tabs)/create')} style={styles.screenshotFeature}>
         <View style={styles.screenshotIcon}><Ionicons name="color-palette-outline" size={29} color={colors.primary[600]} /></View>
         <View style={styles.copy}><AppText variant="overline" style={styles.blue}>TEXT TO IMAGE</AppText><AppText variant="h4">Describe it. Draw it here.</AppText><AppText variant="bodySmall" style={styles.muted}>SDXS 512 DreamShaper on this phone. Not an LLM. The chat model unloads first.</AppText></View>
         <Ionicons name="arrow-forward" size={22} color={colors.primary[600]} />

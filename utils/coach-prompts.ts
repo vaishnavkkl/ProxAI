@@ -62,17 +62,18 @@ export function detectCoachTopic(text: string): CoachTopic {
   if (/\b(bill|rent|emi|fixed|subscription)\b/.test(question)) {
     return 'bills';
   }
-  if (/\b(spend this month|how should i spend|leftover)\b/.test(question)) {
+  if (/\b(financ\w*|money|spen[dt]\w*|expenses?|transactions?|debits?|credits?|balance|budget|bank|accounts?|leftover|paid|payments?|how much)\b/.test(question) || /പണം|ചെലവ്|വരുമാനം|ശമ്പളം|ബാങ്ക്/.test(question)) {
     return 'spend';
   }
   return 'start';
 }
 
 const LIFE_TOPICS = new Set<CoachTopic>(['today', 'tasks', 'travel', 'delivery', 'security', 'bills']);
+const FINANCE_TOPICS = new Set<CoachTopic>(['compare', 'spend', 'daily', 'save', 'cut', 'income', 'afford']);
 
-/** Only attach saved plans when the question is about this person's day — never money. */
+/** Attach saved facts for questions about the user's plans or finances. */
 export function questionNeedsUserData(text: string): boolean {
-  if (LIFE_TOPICS.has(detectCoachTopic(text))) {
+  if (LIFE_TOPICS.has(detectCoachTopic(text)) || FINANCE_TOPICS.has(detectCoachTopic(text))) {
     return true;
   }
   const question = text.toLowerCase();
@@ -177,9 +178,11 @@ export function selectCoachSnapshot(text: string, question: string, max = 1400):
     travel: /^(Travel|Upcoming events):/i,
     delivery: /^Deliveries:/i,
     security: /^Security to review:/i,
-    bills: /^Due bills:/i,
+    bills: /^(Due bills|Fixed expenses|Renewals):/i,
   };
-  const pattern = sectionPatterns[topic];
+  const pattern = FINANCE_TOPICS.has(topic)
+    ? /^(Finance|Budget|Categories|Transactions|Accounts|Fixed expenses|Renewals):/i
+    : sectionPatterns[topic];
   if (!pattern) return clipCoachSnapshot(text, max);
   const lines = text.split('\n');
   const relevant = lines.filter((line) => pattern.test(line));

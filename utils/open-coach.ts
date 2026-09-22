@@ -1,6 +1,6 @@
 import { router, type Href } from 'expo-router';
 
-/** One chat route on the stack. Does not push a second assistant screen. */
+/** Reuse the Chat tab, including when opening a question from another screen. */
 export function openCoach() {
-  router.navigate('/coach' as Href, { dangerouslySingular: true });
+  router.navigate('/(tabs)/chat' as Href);
 }

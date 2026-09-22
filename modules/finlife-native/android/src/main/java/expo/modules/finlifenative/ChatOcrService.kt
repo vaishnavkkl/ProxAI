@@ -31,7 +31,7 @@ class ChatOcrService : Service() {
         manager.createNotificationChannel(NotificationChannel(CHANNEL, "Image text", NotificationManager.IMPORTANCE_LOW))
       }
       val builder = if (Build.VERSION.SDK_INT >= 26) Notification.Builder(this, CHANNEL) else Notification.Builder(this)
-      builder.setSmallIcon(android.R.drawable.ic_menu_camera)
+      builder.setSmallIcon(R.drawable.proxai_notification_icon)
         .setContentTitle("Reading image text")
         .setContentText("Choose a photo to continue your chat.")
         .setCategory(Notification.CATEGORY_PROGRESS)

@@ -2,22 +2,25 @@ import { exclusiveInference } from '@/services/inference-slot';
 import { useUiStore } from '@/store/ui-store';
 
 export const MODEL_TIMEOUT_MESSAGE = 'Process terminated because model loading or processing took longer than one minute. Please try again.';
+export const REFRESH_TIMEOUT_MS = 3 * 60 * 1000;
+export const REFRESH_TIMEOUT_MESSAGE = 'Refresh stopped because processing this message batch took longer than three minutes. Please try again.';
 export const MODEL_DRAINING_MESSAGE = 'The previous model process is still stopping. You can leave this screen and try again shortly.';
 let draining = false;
 export function isModelTaskDraining() { return draining; }
 export function isModelTimeout(error: unknown) {
-  return error instanceof Error && (error.message === MODEL_TIMEOUT_MESSAGE || error.message === MODEL_DRAINING_MESSAGE);
+  return error instanceof Error && [MODEL_TIMEOUT_MESSAGE, REFRESH_TIMEOUT_MESSAGE, MODEL_DRAINING_MESSAGE].includes(error.message);
 }
 
 /** Release the UI at the deadline, but keep native work serialized until it actually stops. */
-export async function runModelTask<T>(work: (signal: AbortSignal) => Promise<T>, stop: () => void, cleanup: () => Promise<unknown>): Promise<T> {
+export async function runModelTask<T>(work: (signal: AbortSignal) => Promise<T>, stop: () => void, cleanup: () => Promise<unknown>, options?: { timeoutMs: number; message: string }): Promise<T> {
   if (draining) throw new Error(MODEL_DRAINING_MESSAGE);
+  const message = options?.message ?? MODEL_TIMEOUT_MESSAGE;
   const controller = new AbortController();
   let expired = false;
   let started = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const nativeWork = exclusiveInference(async () => {
-    if (controller.signal.aborted) throw new Error(MODEL_TIMEOUT_MESSAGE);
+    if (controller.signal.aborted) throw new Error(message);
     started = true;
     try { return await work(controller.signal); }
     finally {
@@ -30,12 +33,12 @@ export async function runModelTask<T>(work: (signal: AbortSignal) => Promise<T>,
     timer = setTimeout(() => {
       expired = true;
       if (started) draining = true;
-      controller.abort();
-      reject(new Error(MODEL_TIMEOUT_MESSAGE));
-      useUiStore.getState().setToast({ kind: 'error', message: MODEL_TIMEOUT_MESSAGE });
+      controller.abort(new Error(message));
+      reject(new Error(message));
+      useUiStore.getState().setToast({ kind: 'error', message });
       // Do not interrupt a different operation if this task was only queued.
       if (started) { try { stop(); } catch { /* Already stopped. */ } }
-    }, 60_001);
+    }, options?.timeoutMs ?? 60_001);
   });
   try { return await Promise.race([nativeWork, deadline]); }
   finally { clearTimeout(timer); }

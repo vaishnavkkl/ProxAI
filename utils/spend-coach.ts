@@ -5,6 +5,8 @@ import { formatLedgerWhen } from '@/utils/format-when';
 import { informationTitle } from '@/utils/information';
 import { localDay, parseLocalDate, isWithinUpcomingWindow } from '@/utils/message-date';
 import { summarizeMonth } from '@/utils/month-finance';
+import { listBankAccounts } from '@/utils/bank-account';
+import { formatInr } from '@/utils/format-inr';
 
 export type SpendPlan = {
   monthLabel: string;
@@ -103,7 +105,7 @@ function ofType(items: LedgerItem[], type: LedgerItem['type'], limit: number) {
   return items.filter((item) => item.type === type).slice(0, limit).map(lifeLine);
 }
 
-export function coachSnapshot(ledger: CoachLedger): string {
+export function coachSnapshot(ledger: CoachLedger, question = ''): string {
   const { plan, events, life } = ledger;
   const upcoming = events.slice(0, 4).map((item) => {
     const day = (item.date ?? '').slice(0, 10) || 'soon';
@@ -116,6 +118,31 @@ export function coachSnapshot(ledger: CoachLedger): string {
   const dueBills = ofType(life, 'bill', 4);
 
   const lines = [`Month: ${plan.monthLabel}`];
+  const money = (amount: number) => `INR ${Number(amount.toFixed(2))}`;
+  const clean = (value: string) => value.replace(/\s+/g, ' ').trim().slice(0, 48);
+  lines.push(`Finance: ${ledger.transactions.length} saved transactions overall. This month's recorded credits ${money(plan.income)}; debits ${money(plan.spend)}. These are saved records, not live bank balances.`);
+  lines.push(`Budget: configured salary ${money(plan.salary)}; monthly fixed expenses ${money(plan.fixed)}; estimated leftover ${money(plan.leftover)}; daily budget ${money(plan.daily)}. Leftover = configured salary + recorded credits - fixed expenses - recorded debits; may double-count salary already in credits.`);
+  if (ledger.categories.length) {
+    lines.push(`Categories: ${ledger.categories.map((item) => `${clean(item.label)} ${money(item.amount)}`).join('; ')}`);
+  }
+  const accounts = listBankAccounts(ledger.transactions);
+  if (accounts.length) {
+    lines.push(`Accounts: ${accounts.map((account) => `${clean(account.label)} credits ${money(account.income)}, debits ${money(account.spend)}`).join('; ')}`);
+  }
+  const words = question.toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) ?? [];
+  const score = (item: LedgerItem) => words.filter((word) =>
+    `${item.merchant ?? ''} ${item.bankLabel ?? ''} ${item.category} ${item.date ?? ''}`.toLowerCase().includes(word)).length;
+  const transactions = [...ledger.transactions].sort((a, b) => score(b) - score(a) || (b.date ?? '').localeCompare(a.date ?? '')).slice(0, 8);
+  if (transactions.length) {
+    lines.push(`Transactions: sample of ${transactions.length}/${ledger.transactions.length} saved records, relevant/recent first: ${transactions.map((item) => `${(item.date ?? 'undated').slice(0, 10)} ${clean(item.merchant ?? 'Unknown')} ${item.category === 'income' ? 'credit' : 'debit'} ${item.amount == null ? 'amount unknown' : money(item.amount)} (${clean(item.bankLabel ?? item.category)})`).join('; ')}`);
+  }
+  if (ledger.expenses.length) {
+    lines.push(`Fixed expenses: ${ledger.expenses.map((item) => `${clean(item.label)} ${money(item.amount)} ${item.kind}`).join('; ')}`);
+  }
+  const renewals = ledger.subscriptions.filter((item) => item.note !== 'app' && !item.id.startsWith('app-')).slice(0, 6);
+  if (renewals.length) {
+    lines.push(`Renewals: ${renewals.map((item) => `${clean(item.merchant ?? 'Subscription')} ${item.amount == null ? 'amount unknown' : money(item.amount)} ${item.date ?? 'date unknown'}`).join('; ')}`);
+  }
   if (upcoming.length > 0) {
     lines.push(`Upcoming events: ${upcoming.join('; ')}`);
   }
@@ -144,13 +171,13 @@ export function coachSnapshot(ledger: CoachLedger): string {
   return lines.join('\n');
 }
 
-export function fallbackCoachReply(_plan: SpendPlan, question = '', life: LedgerItem[] = [], now = new Date()): string {
+export function fallbackCoachReply(plan: SpendPlan, question = '', life: LedgerItem[] = [], now = new Date()): string {
   const visible = coachOpenLife(life, {}, now);
   const agenda =
     visible.length > 0
       ? `Coming up: ${visible.slice(0, 4).map(humanLifeLine).join('; ')}.`
       : 'Nothing upcoming in your plans. Add a task or refresh messages.';
-  const finance = 'Money, spends, and leftover stay in Finance. I can help with plans and tasks here.';
+  const finance = `For ${plan.monthLabel}, saved transactions show ${formatInr(plan.income)} in credits and ${formatInr(plan.spend)} in spending. Your configured monthly fixed expenses total ${formatInr(plan.fixed)}. These are recorded amounts, not a live bank balance.`;
 
   switch (detectCoachTopic(question)) {
     case 'today':

@@ -7,12 +7,13 @@ import { DefaultTheme, ThemeProvider } from 'expo-router/react-navigation';
 import { Stack } from 'expo-router/stack';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import 'react-native-reanimated';
 
 import { LedgerDetailHost } from '@/components/ledger-detail-host';
 import { ModelDownloadBanner } from '@/components/model-download-banner';
 import { NotificationToast } from '@/components/notification-toast';
+import { Splash } from '@/screens/splash';
 import { setupExecutorch } from '@/services/executorch-setup';
 import { hydrateApp } from '@/services/hydrate';
 import { setupReminderChannels, subscribeReminderActions, syncPlanReminders } from '@/services/reminders';
@@ -22,8 +23,8 @@ setupExecutorch();
 
 void SplashScreen.preventAutoHideAsync().catch(() => undefined);
 SplashScreen.setOptions({
-  duration: 400,
-  fade: true,
+  duration: 0,
+  fade: false,
 });
 
 const finLifeTheme = {
@@ -52,6 +53,19 @@ export default function RootLayout() {
     Poppins_700Bold,
   });
   const [hydrated, setHydrated] = useState(false);
+  const [splashVisible, setSplashVisible] = useState(false);
+  const [splashElapsed, setSplashElapsed] = useState(false);
+
+  const revealSplash = useCallback(() => {
+    void SplashScreen.hideAsync().catch(() => undefined).then(() => setSplashVisible(true));
+  }, []);
+
+  useEffect(() => {
+    if (!splashVisible) return;
+    // Count the animation's visible time, not native startup or font loading.
+    const timer = setTimeout(() => setSplashElapsed(true), 3000);
+    return () => clearTimeout(timer);
+  }, [splashVisible]);
 
   const ready = fontsLoaded || fontError != null;
 
@@ -79,12 +93,11 @@ export default function RootLayout() {
       })
       .finally(() => {
         setHydrated(true);
-        void SplashScreen.hideAsync().catch(() => undefined);
       });
   }, [ready]);
 
-  if (!ready || !hydrated) {
-    return null;
+  if (!ready || !hydrated || !splashElapsed) {
+    return <Splash onLayout={revealSplash} />;
   }
 
   return (

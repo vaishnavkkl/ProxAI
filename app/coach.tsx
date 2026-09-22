@@ -1,5 +1,5 @@
-import { Coach } from '@/screens/coach';
+import { Redirect } from 'expo-router';
 
 export default function CoachRoute() {
-  return <Coach />;
+  return <Redirect href="/(tabs)/chat" />;
 }

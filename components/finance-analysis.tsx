@@ -1,5 +1,5 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { AppPressable as Pressable } from '@/components/app-pressable';
 
@@ -38,11 +38,11 @@ export function FinanceAnalysis({ sort, onSort }: FinanceAnalysisProps) {
   const setFinanceCategory = useUiStore((s) => s.setFinanceCategory);
   const salary = useBudgetStore((s) => s.salary);
   const expenses = useBudgetStore((s) => s.expenses);
-  const scoped = items.filter((item) => inBankAccount(item, bankId));
+  const scoped = useMemo(() => items.filter((item) => inBankAccount(item, bankId)), [items, bankId]);
   const accountView = Boolean(bankId);
-  const summary = summarizeMonth(scoped, accountView ? 0 : salary, accountView ? [] : expenses);
-  const plan = buildSpendPlan(scoped, accountView ? 0 : salary, accountView ? [] : expenses);
-  const accounts = listBankAccounts(items);
+  const summary = useMemo(() => summarizeMonth(scoped, accountView ? 0 : salary, accountView ? [] : expenses), [scoped, accountView, salary, expenses]);
+  const plan = useMemo(() => buildSpendPlan(scoped, accountView ? 0 : salary, accountView ? [] : expenses), [scoped, accountView, salary, expenses]);
+  const accounts = useMemo(() => listBankAccounts(items), [items]);
   const selected = accounts.find((account) => account.id === bankId);
 
   return (
